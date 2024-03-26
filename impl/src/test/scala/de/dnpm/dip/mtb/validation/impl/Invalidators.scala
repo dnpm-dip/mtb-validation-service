@@ -21,8 +21,44 @@ trait Invalidators
     diagnosis.copy(
       patient = Reference.from(Id[Patient]("123")),
       code = Coding[ICD10GM]("wrong"),
+      topography = diagnosis.topography.map(_ => Coding[ICDO3.T]("wrong")),
       guidelineTreatmentStatus = None,
-      topography = None
+    )
+
+
+  def invalidate(therapy: MTBMedicationTherapy) =
+    therapy.copy(
+      patient = Reference.from(Id[Patient]("123")),
+      therapyLine = None,
+      period = None
+    )
+
+
+  def invalidate(procedure: OncoProcedure) =
+    procedure.copy(
+      patient = Reference.from(Id[Patient]("123")),
+      therapyLine = None,
+      period = None
+    )
+
+  def invalidate(specimen: TumorSpecimen) =
+    specimen.copy(
+      patient = Reference.from(Id[Patient]("123")),
+      `type` = Coding(TumorSpecimen.Type.Unknown)
+    )
+
+
+
+  def invalidate(record: MTBPatientRecord): MTBPatientRecord =
+    record.copy(
+      diagnoses =
+        Some(record.getDiagnoses.map(invalidate)),
+      guidelineMedicationTherapies =
+        Some(record.getGuidelineMedicationTherapies.map(invalidate)),
+      guidelineProcedures =  
+        Some(record.getGuidelineProcedures.map(invalidate)),
+      specimens =  
+        Some(record.getSpecimens.map(invalidate)),
     )
 
 }

@@ -49,7 +49,6 @@ with Invalidators
       .getInstance[Id]
       .get
 
-
   implicit val icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]] =
     ICD10GM.Catalogs
       .getInstance[Id]
@@ -61,16 +60,41 @@ with Invalidators
       .get
 
 
-  implicit val path: Path =
-    Path.root
-
   val record =
     Gen.of[MTBPatientRecord].next
+
+
+/*
+  implicit val path: Path =
+    Path.root
 
   implicit val patient: Patient =
     record.patient
 
+  implicit val diagnoses: List[MTBDiagnosis] =
+    record.getDiagnoses
 
+  implicit val recommendations: List[MTBMedicationRecommendation] =
+    record.getCarePlans
+      .flatMap(_.medicationRecommendations.getOrElse(List.empty))
+*/
+
+  "Validation of invalidated MTBPatientRecord" must "have failed" in {
+
+    invalidate(record)
+      .pipe(validate(_)(patientRecordValidator))
+      .tap(
+        _.fold(
+          errs => toJson(errs.toList) pipe prettyPrint pipe println,
+          _ => ()
+       )
+     )
+     .isInvalid mustBe true
+    
+  }
+
+
+/*
   "Validation of MTBDiagnosis" must "have failed" in {
  
     val diagnoses =
@@ -91,5 +115,26 @@ with Invalidators
 
   }
 
+
+  "Validation of Guideline Therapies" must "have failed" in {
+ 
+    val therapies =
+      record.getGuidelineMedicationTherapies
+        .map(invalidate)
+
+    forAll(
+      therapies.map(validate(_)(validGuidelineTherapy))
+        .tapEach(
+          _.fold(
+            errs => toJson(errs.toList) pipe prettyPrint pipe println,
+            _ => ()
+          )
+        )
+    ){ 
+      _.isInvalid mustBe true
+    }
+
+  }
+*/
 
 }

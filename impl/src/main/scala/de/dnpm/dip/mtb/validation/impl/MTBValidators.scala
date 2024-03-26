@@ -12,6 +12,7 @@ import de.ekut.tbi.validation.{
   NegatableValidator
 }
 import de.ekut.tbi.validation.dsl._
+import de.dnpm.dip.util.DisplayLabel
 import de.dnpm.dip.coding.{
   Coding,
   CodeSystemProvider
@@ -41,20 +42,24 @@ import Issue.{
 object MTBValidators extends Validators
 {
 
-  implicit val patientNode: Path.Node[Patient] =
-    Path.Node("Patient")
-
-  implicit val diagnosisNode: Path.Node[MTBDiagnosis] =
-    Path.Node("Diagnose")
-
-  implicit val medTherapyNode: Path.Node[MTBMedicationTherapy] =
-    Path.Node("Systemische-Therapie")
-
-  implicit val medTherapyRecommendationNode: Path.Node[MTBMedicationRecommendation] =
-    Path.Node("Therapie-Empfehlung")
 
   private implicit val whoGradingCsp: CodeSystemProvider[WHOGrading,Id,Applicative[Id]] =
     new WHOGrading.Provider.Facade[Id]
+
+
+  implicit val performanceStatusNode: Path.Node[PerformanceStatus] =
+    Path.Node("Performance-Status")
+
+  implicit val tumorSpecimenNode: Path.Node[TumorSpecimen] =
+    Path.Node("Tumor-Probe")
+
+
+
+  // For implicit conversions to NegatableValidator[Issue,T]
+  private implicit def defaultIssueAtPath(
+    implicit path: Path
+  ): String => Issue =
+    Error(_) at path
 
 
   implicit def icdo3TCodingValidator(
@@ -62,12 +67,12 @@ object MTBValidators extends Validators
   ): Validator[Issue.Builder,Coding[ICDO3.T]] = {
     coding =>
 
-      implicit val icdo3t =
+      val icdo3t =
         coding.version
           .flatMap(icdo3.topography(_))
           .getOrElse(icdo3.topography)
 
-      validate(coding)
+      csCodingValidator(icdo3t)(coding)
   }
 
 
@@ -104,20 +109,16 @@ object MTBValidators extends Validators
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
     atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
-  ): Validator[Issue,MTBMedicationTherapy] = {
+  ): NegatableValidator[Issue,MTBMedicationTherapy] = {
     therapy =>
       val path = basePath / therapy
       (
-        validate(therapy.patient) at path/"Patient",
-        validate(therapy.indication) at path/"Indikation",
-        therapy.therapyLine must be (defined) otherwise (
-          Warning("Fehlende Angabe") at path/"Therapie-Linie"
-        ),
-        therapy.period must be (defined) otherwise (
-          Warning("Fehlende Angabe") at path/"Zeitraum"
-        ),
+        validate(therapy),
         validateOpt(therapy.basedOn) at path/"Empfehlung",
-        ifDefined(therapy.medication.map(_.toList))(validateEach(_) at path/"Medikation")
+        therapy.medication.map(_.toList)
+          .pipe(
+            ifDefined(_)(validateEach(_) at path/"Medikation")
+          )
       )
       .errorsOr(therapy)
   }
@@ -130,23 +131,22 @@ object MTBValidators extends Validators
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
     atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
-  ): Validator[Issue,MTBMedicationTherapy] = {
+  ): NegatableValidator[Issue,MTBMedicationTherapy] = {
     therapy =>
 
       import Therapy.Status.{Ongoing,Completed,Stopped}
 
       val path = basePath / therapy
       (
-        validate(therapy.patient) at path/"Patient",
-        validate(therapy.indication) at path/"Indikation",
+        validate(therapy),
         validateOpt(therapy.basedOn) at path/"Empfehlung",
         therapy.statusValue match {
           case Ongoing | Completed | Stopped  =>
             therapy.medication.getOrElse(Set.empty).toList must be (nonEmpty) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie") at path/"Medikation"
+              Error("Fehlende Angabe bei begonnener Therapie")
             ) andThen (
-              validateEach(_) at path/"Medikation"
-            )
+              validateEach(_)
+            ) at path/"Medikation"
           case _ => None.validNel[Issue]
         },
         therapy.statusValue match {
@@ -172,6 +172,32 @@ object MTBValidators extends Validators
       .errorsOr(therapy)
   }
 
+  
+  implicit def specimenValidator(
+    implicit
+    basePath: Path,
+    patient: Patient,
+    diagnoses: Iterable[MTBDiagnosis],
+  ): NegatableValidator[Issue,TumorSpecimen] = {
+    specimen =>
+      val path = basePath / specimen
+      (
+        validate(specimen.patient) at path/"Patient",
+        validate(specimen.diagnosis) at path/"Diagnose",
+        (
+          specimen.`type` match {
+            case t @ TumorSpecimen.Type(TumorSpecimen.Type.Unknown) =>
+              Warning(s"Fehlende/Unspezifische Angabe '${DisplayLabel.of(t.code).value}'").invalidNel[Coding[TumorSpecimen.Type.Value]] at path/"Typ"
+            case t =>
+              t.validNel[Issue]
+          }
+        )
+      )
+      .errorsOr(specimen)
+  }
+
+
+
 
   def patientRecordValidator(
     implicit 
@@ -180,6 +206,7 @@ object MTBValidators extends Validators
     atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
   ): Validator[Issue,MTBPatientRecord] = {
     record =>
+
       implicit val path =
         Path.root
 
@@ -193,6 +220,8 @@ object MTBValidators extends Validators
         record.getCarePlans
           .flatMap(_.medicationRecommendations.getOrElse(List.empty))
 
+
+
       (
         diagnoses must be (nonEmpty) otherwise (
           Error(s"Fehlende Angabe") at path/"Diagnosen"
@@ -200,130 +229,36 @@ object MTBValidators extends Validators
           validateEach(_)
         ),        
         record.getGuidelineMedicationTherapies must be (nonEmpty) otherwise (
-          Error(s"Fehlende Angabe") at path/"Leitlinien-Therapien"
+          Warning(s"Fehlende Angabe") at path/"Leitlinien-Therapien"
         ) andThen (
-          all (_) must validGuidelineTherapy
-        )
+          all (_) must be (validGuidelineTherapy)
+        ),
+        record.getGuidelineProcedures must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at path/"Leitlinien-Prozeduren"
+        ) andThen (
+          validateEach(_)
+        ),
+/*      
+        record.getPerformanceStatus must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at path/"Performance-Status"
+        ) andThen (
+          validateEach(_)
+        ),
+*/      
+        record.getSpecimens must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at path/"Tumor-Proben"
+        ) andThen (
+          validateEach(_)
+        ),
+        record.getMedicationTherapies must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at path/"MTB-Therapien"
+        ) map (_.flatMap(_.history)) andThen (
+          all (_) must be (validMTBTherapy)
+        ),
       )
       .errorsOr(record)
   }
 
 }
-
-
-
-
-/*
-  implicit def diagnosisValidator(
-    implicit
-    basePath: Path,
-    patient: Patient,
-    icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]]
-  ): Validator[Issue,MTBDiagnosis] = {
-    diagnosis =>
-      val path = basePath / diagnosis
-      (
-        validate(diagnosis.patient) otherwise (
-          Error("Ungültige Referenz auf 'Patient'") at path/"Patient"
-        ),
-        validate(diagnosis.code) otherwise (
-          Error("Ungültiger ICD-10-GM Code oder Version") at path/"Code"
-        )
-      )
-      .errorsOr(diagnosis)
-  }
-
-
-  def validGuidelineTherapy(
-    implicit
-    basePath: Path,
-    patient: Patient,
-    diagnoses: Iterable[MTBDiagnosis],
-    recommendations: Iterable[MTBMedicationRecommendation],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
-  ): Validator[Issue,MTBMedicationTherapy] = {
-    therapy =>
-      val path = basePath / therapy
-      (
-        validate(therapy.patient) otherwise (
-          Error("Ungültige Referenz auf 'Patient'") at path/"Patient"
-        ),
-        validate(therapy.indication) otherwise (
-          Error("Ungültige Referenz auf 'Diagnose'") at path/"Indikation"
-        ),
-        therapy.therapyLine must be (defined) otherwise (
-          Warning("Fehlende Angabe") at path/"Therapie-Linie"
-        ),
-        therapy.period must be (defined) otherwise (
-          Warning("Fehlende Angabe") at path/"Zeitraum"
-        ),
-        validateEach(therapy.basedOn) otherwise (
-          Error("Ungültige Referenz auf 'Therapie-Empfehlung'") at path/"Empfehlung"
-        ),
-        validateEach(therapy.medication.getOrElse(Set.empty).toList) otherwise (
-          Error("Ungültiger ATC Code oder Version") at path/"Medikation"
-        )
-      )
-      .errorsOr(therapy)
-  }
-
-
-  def validMTBTherapy(
-    implicit
-    basePath: Path,
-    patient: Patient,
-    diagnoses: Iterable[MTBDiagnosis],
-    recommendations: Iterable[MTBMedicationRecommendation],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
-  ): Validator[Issue,MTBMedicationTherapy] = {
-    therapy =>
-
-      import Therapy.Status.{Ongoing,Completed,Stopped}
-
-      val path = basePath / therapy
-      (
-        validate(therapy.patient) otherwise (
-          Error("Ungültige Referenz auf 'Patient'") at path/"Patient"
-        ),
-        validate(therapy.indication) otherwise (
-          Error("Ungültige Referenz auf 'Diagnose'") at path/"Indikation"
-        ),
-        validateEach(therapy.basedOn) otherwise (
-          Error("Ungültige Referenz auf 'Therapie-Empfehlung'") at path/"Empfehlung"
-        ),
-        therapy.statusValue match {
-          case Ongoing | Completed | Stopped  =>
-            therapy.medication must be (defined) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie") at path/"Medikation"
-            ) andThen (
-              medications => validateEach(medications.get.toList) otherwise (
-                Error("Ungültiger ATC Code oder Version") at path/"Medikation"
-              )
-            )
-          case _ =>
-            None.validNel[Issue]
-        },
-        therapy.statusValue match {
-          case Ongoing =>
-            therapy.period must be (defined) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie") at path/"Zeitraum"
-            )
-          case Completed | Stopped =>
-            therapy.period must be (defined) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie") at path/"Zeitraum"
-            ) andThen (
-              _.get.endOption must be (defined) otherwise (Error("Fehlende Angabe") at path/"Zeitraum"/"End-Datum")
-            )
-            
-          case _ =>
-            None.validNel[Issue]
-        },
-        therapy.statusReason must be (defined) otherwise (
-          Warning("Fehlende Angabe") at path/"Status-Grund"
-        )
-      )
-      .errorsOr(therapy)
-  }
-*/
 
 
