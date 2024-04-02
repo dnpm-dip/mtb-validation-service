@@ -6,6 +6,7 @@ import cats.{
   Applicative,
   Id
 }
+import cats.data.Ior
 import cats.syntax.validated._
 import de.ekut.tbi.validation.{
   Validator,
@@ -15,6 +16,7 @@ import de.ekut.tbi.validation.dsl._
 import de.dnpm.dip.util.DisplayLabel
 import de.dnpm.dip.coding.{
   Coding,
+  CodeSystem,
   CodeSystemProvider
 }
 import de.dnpm.dip.coding.atc.ATC
@@ -22,6 +24,7 @@ import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
 import de.dnpm.dip.model.{
+  ClosedInterval,
   Patient,
   Therapy
 }
@@ -53,6 +56,33 @@ object MTBValidators extends Validators
   implicit val tumorSpecimenNode: Path.Node[TumorSpecimen] =
     Path.Node("Tumor-Probe")
 
+  implicit val tumorCellContentNode: Path.Node[TumorCellContent] =
+    Path.Node("Tumor-Zellgehalt")
+
+  implicit val tumorMorphologyNode: Path.Node[TumorMorphology] =
+    Path.Node("Tumor-Morphologie")
+
+  implicit val histologyReportNode: Path.Node[HistologyReport] =
+    Path.Node("Histologie-Bericht")
+
+  implicit val ngsReportNode: Path.Node[NGSReport] =
+    Path.Node("NGS-Bericht")
+
+  implicit val tmbNode: Path.Node[TMB] =
+    Path.Node("TMB-Befund")
+
+  implicit val brcanessNode: Path.Node[BRCAness] =
+    Path.Node("BRCAness")
+
+  implicit val hrdScoreNode: Path.Node[HRDScore] =
+    Path.Node("HRD-Score")
+
+  implicit val snvNode: Path.Node[SNV] =
+    Path.Node("SNV")
+
+  implicit val cnvNode: Path.Node[CNV] =
+    Path.Node("CNV")
+
 
 
   // For implicit conversions to NegatableValidator[Issue,T]
@@ -73,6 +103,19 @@ object MTBValidators extends Validators
           .getOrElse(icdo3.topography)
 
       csCodingValidator(icdo3t)(coding)
+  }
+
+  implicit def icdo3MCodingValidator(
+    implicit icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
+  ): Validator[Issue.Builder,Coding[ICDO3.M]] = {
+    coding =>
+
+      val icdo3m =
+        coding.version
+          .flatMap(icdo3.morphology(_))
+          .getOrElse(icdo3.morphology)
+
+      csCodingValidator(icdo3m)(coding)
   }
 
 
@@ -184,17 +227,202 @@ object MTBValidators extends Validators
       (
         validate(specimen.patient) at path/"Patient",
         validate(specimen.diagnosis) at path/"Diagnose",
-        (
-          specimen.`type` match {
-            case t @ TumorSpecimen.Type(TumorSpecimen.Type.Unknown) =>
-              Warning(s"Fehlende/Unspezifische Angabe '${DisplayLabel.of(t.code).value}'").invalidNel[Coding[TumorSpecimen.Type.Value]] at path/"Typ"
-            case t =>
-              t.validNel[Issue]
-          }
-        )
+        specimen.`type` must not (be (Coding(TumorSpecimen.Type.Unknown))) otherwise (
+          Warning(s"Fehlende/Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'")
+        ) at path/"Typ"
       )
       .errorsOr(specimen)
   }
+
+
+  private val tumorCellContentRange =
+    ClosedInterval(0.0 -> 1.0)
+
+  private def TumorCellContentValidator(
+    basePath: Path,
+    method: TumorCellContent.Method.Value
+  )(
+    implicit
+    patient: Patient,
+    specimens: Iterable[TumorSpecimen],
+  ): Validator[Issue,TumorCellContent] = {
+    tcc =>
+      val path = basePath / tcc
+      val expectedMethod = Coding(method)
+      (
+        validate(tcc.patient) at path/"Patient",
+        validate(tcc.specimen) at path/"Probe",
+        tcc.method must be (expectedMethod) otherwise (
+          Error(s"Ungültige Bestimmungs-Methode, '${DisplayLabel.of(expectedMethod)}' erwartet")
+        ) at path/"Methode",
+        tcc.value must be (in (tumorCellContentRange)) otherwise (
+          Error(s"Ungültiger Wert ${tcc.value}, nicht in Referenz-Bereich $tumorCellContentRange")
+        ) at path/"Wert"
+      )
+      .errorsOr(tcc)
+  }
+
+
+  implicit def tumorMorphologyValidator(
+    implicit
+    basePath: Path,
+    patient: Patient,
+    specimens: Iterable[TumorSpecimen],
+    icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
+  ): Validator[Issue,TumorMorphology] = {
+    obs =>
+      val path = basePath / obs
+      (
+        validate(obs.patient) at path/"Patient",
+        validate(obs.specimen) at path/"Probe",
+        validate(obs.value) at path/"Wert"
+      )
+      .errorsOr(obs)
+  }
+
+
+  implicit def histologyReportValidator(
+    implicit
+    basePath: Path,
+    patient: Patient,
+    specimens: Iterable[TumorSpecimen],
+    icdo3: ICDO3.Catalogs[Id,Applicative[Id]],
+  ): NegatableValidator[Issue,HistologyReport] = {
+     report =>
+
+      val path = basePath / report
+
+      val tumorMorphology  = report.results.tumorMorphology
+      val tumorCellContent = report.results.tumorCellContent
+      val expectedMethod   = Coding(TumorCellContent.Method.Histologic).code
+
+      (
+        validate(report.patient) at path/"Patient",
+        validate(report.specimen) at path/"Probe",
+        (tumorMorphology orElse tumorCellContent) must be (defined) otherwise (
+          Error("Keine Befunde vorhanden, weder Tumor-Morphologie noch -Zellgehalt") at path/"Ergebnisse"
+        ),
+        tumorMorphology must be (defined) otherwise (
+          Warning("Fehlender Befund") at path/"Ergebnisse"/Path.Node[TumorMorphology].name
+        ) map (_.get) andThen (
+          validate(_) 
+        ),
+        tumorCellContent must be (defined) otherwise (
+          Warning("Fehlender Befund") at path/"Ergebnisse"/Path.Node[TumorCellContent].name
+        ) map (_.get) andThen (
+          TumorCellContentValidator(path/"Ergebnisse",TumorCellContent.Method.Histologic)
+        )
+      )
+      .errorsOr(report)
+
+  }
+
+
+
+  private def validSNV(
+    path: Path
+  )(
+    implicit
+    patient: Patient,
+    geneValidator: Validator[Issue.Builder,Coding[HGNC]]
+  ): NegatableValidator[Issue,SNV] = {
+    
+    implicit val implPath = path
+
+    snv =>
+      (
+        validate(snv.patient) at path/snv/"Patient",
+        ifDefined(snv.gene)(validate(_)) at path/snv/"Gen"
+      )
+      .errorsOr(snv)
+  }
+
+  private def validCNV(
+    path: Path
+  )(
+    implicit
+    patient: Patient,
+    geneValidator: Validator[Issue.Builder,Coding[HGNC]]
+  ): NegatableValidator[Issue,CNV] = {
+    
+    implicit val implPath = path
+
+    cnv =>
+      (
+        validate(cnv.patient) at path/cnv/"Patient",
+        validateEach(cnv.reportedAffectedGenes.toList) at path/cnv/"Reported Affected Genes",
+        validateEach(cnv.copyNumberNeutralLoH.toList) at path/cnv/"CopyNumber Neutral LoH"
+      )
+      .errorsOr(cnv)
+  }
+
+  implicit def ngsReportValidator(
+    implicit
+    basePath: Path,
+    patient: Patient,
+    specimens: Iterable[TumorSpecimen],
+    hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]]
+  ): NegatableValidator[Issue,NGSReport] = {
+    report =>
+      val path = basePath/report
+
+      (
+        validate(report.patient) at path/"Patient",
+        validate(report.specimen) at path/"Probe",
+        report.results.tumorCellContent must be (defined) otherwise (
+          Warning("Fehlender Befund") at path/"Ergebnisse"/Path.Node[TumorCellContent].name
+        ) map (_.get) andThen (
+          TumorCellContentValidator(path/"Ergebnisse",TumorCellContent.Method.Bioinformatic)
+        ),
+        report.results.tmb must be (defined) otherwise (
+          Warning("Fehlender Befund") at path/"Ergebnisse"/Path.Node[TMB].name
+        ) map (_.get) andThen (
+          ObservationValidator[TMB.Result,TMB](
+            path/"Ergebnisse",
+            tmb => tmb must be (in (TMB.referenceRange)) otherwise (
+              Error(s"Ungültiger Wert ${tmb.value}, nicht in Referenz-Bereich ${TMB.referenceRange}")
+            )
+          )
+        ),
+        report.results.brcaness must be (defined) otherwise (
+          Warning("Fehlender Befund") at path/"Ergebnisse"/Path.Node[BRCAness].name
+        ) map (_.get) andThen (
+          ObservationValidator[Double,BRCAness](
+            path/"Ergebnisse",
+            value => value must be (in (BRCAness.referenceRange)) otherwise (
+              Error(s"Ungültiger Wert $value, nicht in Referenz-Bereich ${BRCAness.referenceRange}")
+            )
+          )
+        ),
+        report.results.hrdScore must be (defined) otherwise (
+          Warning("Fehlender Befund") at path/"Ergebnisse"/Path.Node[HRDScore].name
+        ) map (_.get) andThen (
+          ObservationValidator[Double,HRDScore](
+            path/"Ergebnisse",
+            value => value must be (in (HRDScore.referenceRange)) otherwise (
+              Error(s"Ungültiger Wert $value, nicht in Referenz-Bereich ${HRDScore.referenceRange}")
+            )
+          )
+        ),
+        report.results.simpleVariants must be (nonEmpty) otherwise (
+          Warning("Fehlende Befunde") at path/"Ergebnisse"/"SNVs"
+        ) andThen(
+          all(_) must be (validSNV(path/"Ergebnisse"))
+        ),
+        report.results.copyNumberVariants must be (nonEmpty) otherwise (
+          Warning("Fehlende Befunde") at path/"Ergebnisse"/"CNVs"
+        ) andThen {
+          all(_) must be (validCNV(path/"Ergebnisse"))
+        }
+        
+
+
+      )
+      .errorsOr(report)
+
+  }
+
+
 
 
 
@@ -203,7 +431,8 @@ object MTBValidators extends Validators
     implicit 
     icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]],
     icdo3: ICDO3.Catalogs[Id,Applicative[Id]],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
+    atc: CodeSystemProvider[ATC,Id,Applicative[Id]],
+    hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]]
   ): Validator[Issue,MTBPatientRecord] = {
     record =>
 
@@ -219,6 +448,15 @@ object MTBValidators extends Validators
       implicit val recommendations =
         record.getCarePlans
           .flatMap(_.medicationRecommendations.getOrElse(List.empty))
+
+      implicit val specimens = 
+        record.getSpecimens
+
+      implicit val performanceStatusValidator: Validator[Issue,PerformanceStatus] =
+        ObservationValidator[Coding[ECOG.Value],PerformanceStatus](
+          path,
+          csCodingValidator(ECOG.codeSystem)
+        )
 
 
 
@@ -238,14 +476,12 @@ object MTBValidators extends Validators
         ) andThen (
           validateEach(_)
         ),
-/*      
         record.getPerformanceStatus must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at path/"Performance-Status"
         ) andThen (
           validateEach(_)
         ),
-*/      
-        record.getSpecimens must be (nonEmpty) otherwise (
+        specimens must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at path/"Tumor-Proben"
         ) andThen (
           validateEach(_)
@@ -255,6 +491,18 @@ object MTBValidators extends Validators
         ) map (_.flatMap(_.history)) andThen (
           all (_) must be (validMTBTherapy)
         ),
+        record.getHistologyReports must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at path/"Histologie-Berichte"
+        ) andThen (
+          validateEach(_)
+        ),
+        //TODO: IHC-Reports
+        record.getNgsReports must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at path/"NGS-Berichte"
+        ) andThen (
+          validateEach(_)
+        )
+        
       )
       .errorsOr(record)
   }
