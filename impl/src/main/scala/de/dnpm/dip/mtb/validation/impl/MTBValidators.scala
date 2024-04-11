@@ -28,6 +28,7 @@ import de.dnpm.dip.coding.hgnc.HGNC
 import de.dnpm.dip.model.{
   ClosedInterval,
   Patient,
+  Reference,
   Therapy
 }
 import de.dnpm.dip.service.validation.{
@@ -104,12 +105,18 @@ object MTBValidators extends Validators
   implicit val mtbMedicationRecommendationNode: Path.Node[MTBMedicationRecommendation] =
     Path.Node("MTB-Therapie-Empfehlung")
 
-//  implicit val _Node: Path.Node[] =
-//    Path.Node("")
-
   implicit val carePlanNode: Path.Node[MTBCarePlan] =
     Path.Node("MTB-Beschluss")
 
+  implicit val claimNode: Path.Node[Claim] =
+    Path.Node("Kostenübernahme-Antrag")
+
+  implicit val claimResponseNode: Path.Node[ClaimResponse] =
+    Path.Node("Kostenübernahme-Antwort")
+
+
+//  implicit val _Node: Path.Node[] =
+//    Path.Node("")
 
 
 
@@ -148,20 +155,19 @@ object MTBValidators extends Validators
   ): Validator[Issue,MTBDiagnosis] =
     diagnosis =>
       (
-        validate(diagnosis.patient) at diagnosis/"Patient",
-        validate(diagnosis.code) at diagnosis/"Code",
+        validate(diagnosis.patient) at "Patient",
+        validate(diagnosis.code) at "Code",
         diagnosis.topography must be (defined) otherwise (
           Info("Fehlende Angabe")
         ) andThen (
           c => validate(c.get)
-        ) at diagnosis/"Topographie",
-        ifDefined(diagnosis.whoGrading)(validate(_) at diagnosis/"WHO-Graduierung"),
+        ) at "Topographie",
+        ifDefined(diagnosis.whoGrading)(validate(_) at "WHO-Graduierung"),
         diagnosis.guidelineTreatmentStatus must be (defined) otherwise (
-          Warning("Fehlende Angabe") at diagnosis/"Leitlinien-Behandlungsstatus"
+          Warning("Fehlende Angabe") at "Leitlinien-Behandlungsstatus"
         )
       )
-      .errorsOr(diagnosis)
-
+      .errorsOr(diagnosis) on diagnosis
 
 
   def GuidelineTherapyValidator(
@@ -172,14 +178,11 @@ object MTBValidators extends Validators
     atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
   ): Validator[Issue,MTBMedicationTherapy] =
     therapy =>
-      (
-        validate(therapy),
-        therapy.medication.map(_.toList)
-          .pipe(
-            ifDefined(_)(validateEach(_) at therapy/"Medikation")
-          )
+      validate(therapy) combineWith (
+        ifDefined(therapy.medication.map(_.toList))(
+          validateEach(_) at therapy/"Medikation"
+        ) map (_ => therapy)
       )
-      .errorsOr(therapy)
 
 
   def MTBTherapyValidator(
@@ -193,38 +196,39 @@ object MTBValidators extends Validators
 
       import Therapy.Status.{Ongoing,Completed,Stopped}
 
-      (
-        validate(therapy),
-        therapy.statusValue match {
-          case Ongoing | Completed | Stopped  =>
-            therapy.medication.getOrElse(Set.empty).toList must be (nonEmpty) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie")
-            ) andThen (
-              validateEach(_)
-            ) at therapy/"Medikation"
-          case _ => None.validNel[Issue]
-        },
-        therapy.statusValue match {
-          case Ongoing =>
-            therapy.period must be (defined) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie") at therapy/"Zeitraum"
-            )
-          case Completed | Stopped =>
-            therapy.period must be (defined) otherwise (
-              Error("Fehlende Angabe bei begonnener Therapie") at therapy/"Zeitraum"
-            ) andThen (
-              _.get.endOption must be (defined) otherwise (
-                Error("Fehlende Angabe bei abgeschlossener Therapie") at therapy/"Zeitraum"/"End-Datum"
+      validate(therapy) combineWith (
+        (
+          therapy.statusValue match {
+            case Ongoing | Completed | Stopped  =>
+              therapy.medication.getOrElse(Set.empty).toList must be (nonEmpty) otherwise (
+                Error("Fehlende Angabe bei begonnener Therapie")
+              ) andThen (
+                validateEach(_)
+              ) at "Medikation"
+            case _ => None.validNel[Issue]
+          },
+          therapy.statusValue match {
+            case Ongoing =>
+              therapy.period must be (defined) otherwise (
+                Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum"
               )
-            )
-            
-          case _ => None.validNel[Issue]
-        },
-        therapy.statusReason must be (defined) otherwise (
-          Warning("Fehlende Angabe") at therapy/"Status-Grund"
+            case Completed | Stopped =>
+              therapy.period must be (defined) otherwise (
+                Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum"
+              ) andThen (
+                _.get.endOption must be (defined) otherwise (
+                  Error("Fehlende Angabe bei abgeschlossener Therapie") at "End-Datum"
+                ) on "Zeitraum"
+              )
+            case _ => None.validNel[Issue]
+          },
+          therapy.statusReason must be (defined) otherwise (
+            Warning("Fehlende Angabe") at "Status-Grund"
+          )
         )
+        .errorsOr(therapy) on therapy
       )
-      .errorsOr(therapy)
+    
   }
 
 
@@ -245,13 +249,13 @@ object MTBValidators extends Validators
   ): Validator[Issue,TumorSpecimen] = {
     specimen =>
       (
-        validate(specimen.patient) at specimen/"Patient",
-        validate(specimen.diagnosis) at specimen/"Diagnose",
+        validate(specimen.patient) at "Patient",
+        validate(specimen.diagnosis) at "Diagnose",
         specimen.`type` must not (be (Coding(TumorSpecimen.Type.Unknown))) otherwise (
           Warning(s"Fehlende/Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'")
-        ) at specimen/"Typ"
+        ) at "Typ"
       )
-      .errorsOr(specimen)
+      .errorsOr(specimen) on specimen
   }
 
 
@@ -268,16 +272,16 @@ object MTBValidators extends Validators
     tcc =>
       val expectedMethod = Coding(method)
       (
-        validate(tcc.patient) at tcc/"Patient",
-        validate(tcc.specimen) at tcc/"Probe",
+        validate(tcc.patient) at "Patient",
+        validate(tcc.specimen) at "Probe",
         tcc.method must be (expectedMethod) otherwise (
           Error(s"Ungültige Bestimmungs-Methode, '${DisplayLabel.of(expectedMethod)}' erwartet")
-        ) at tcc/"Methode",
+        ) at "Methode",
         tcc.value must be (in (tumorCellContentRange)) otherwise (
           Error(s"Ungültiger Wert ${tcc.value}, nicht in Referenz-Bereich $tumorCellContentRange")
-        ) at tcc/"Wert"
+        ) at "Wert"
       )
-      .errorsOr(tcc)
+      .errorsOr(tcc) on tcc
   }
 
 
@@ -289,11 +293,11 @@ object MTBValidators extends Validators
   ): Validator[Issue,TumorMorphology] =
     obs =>
       (
-        validate(obs.patient) at obs/"Patient",
-        validate(obs.specimen) at obs/"Probe",
-        validate(obs.value) at obs/"Wert"
+        validate(obs.patient) at "Patient",
+        validate(obs.specimen) at "Probe",
+        validate(obs.value) at "Wert"
       )
-      .errorsOr(obs)
+      .errorsOr(obs) on obs
 
 
 
@@ -310,23 +314,23 @@ object MTBValidators extends Validators
       val expectedMethod   = Coding(TumorCellContent.Method.Histologic).code
 
       (
-        validate(report.patient) at report/"Patient",
-        validate(report.specimen) at report/"Probe",
+        validate(report.patient) at "Patient",
+        validate(report.specimen) at "Probe",
         (tumorMorphology orElse tumorCellContent) must be (defined) otherwise (
-          Error("Keine Befunde vorhanden, weder Tumor-Morphologie noch -Zellgehalt") at report/"Ergebnisse"
+          Error("Keine Befunde vorhanden, weder Tumor-Morphologie noch -Zellgehalt") at "Ergebnisse"
         ),
         tumorMorphology must be (defined) otherwise (
-          Warning("Fehlender Befund") at report/"Ergebnisse"/Path.Node[TumorMorphology].name
+          Warning("Fehlender Befund") at root/"Ergebnisse"/Path.Node[TumorMorphology].name
         ) map (_.get) andThen (
           validate(_) 
         ),
         tumorCellContent must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.root/Path.Node[TumorCellContent].name
+          Warning("Fehlender Befund") at Path.Node[TumorCellContent].name
         ) map (_.get) andThen (
           TumorCellContentValidator(TumorCellContent.Method.Histologic)
-        ) at report/"Ergebnisse"
+        ) on "Ergebnisse"
       )
-      .errorsOr(report)
+      .errorsOr(report) on report
   }
 
 
@@ -368,10 +372,10 @@ object MTBValidators extends Validators
   ): Validator[Issue,SNV] =
     snv =>
       (
-        validate(snv.patient) at snv/"Patient",
-        ifDefined(snv.gene)(validate(_)) at snv/"Gen"
+        validate(snv.patient) at "Patient",
+        ifDefined(snv.gene)(validate(_)) at "Gen"
       )
-      .errorsOr(snv)
+      .errorsOr(snv) on snv
 
   private implicit def cnvValidator(
     implicit
@@ -380,11 +384,11 @@ object MTBValidators extends Validators
   ): Validator[Issue,CNV] =
     cnv =>
       (
-        validate(cnv.patient) at cnv/"Patient",
-        validateEach(cnv.reportedAffectedGenes.toList) at cnv/"Reported Affected Genes",
-        validateEach(cnv.copyNumberNeutralLoH.toList) at cnv/"CopyNumber Neutral LoH"
+        validate(cnv.patient) at "Patient",
+        validateEach(cnv.reportedAffectedGenes.getOrElse(Set.empty).toList) at "Reported Affected Genes",
+        validateEach(cnv.copyNumberNeutralLoH.getOrElse(Set.empty).toList) at "CopyNumber Neutral LoH"
       )
-      .errorsOr(cnv)
+      .errorsOr(cnv) on cnv
   
   private implicit def dnaFusionValidator(
     implicit
@@ -393,11 +397,11 @@ object MTBValidators extends Validators
   ): Validator[Issue,DNAFusion] = {
     fusion =>
       (
-        validate(fusion.patient) at fusion/"Patient",
-        validate(fusion.fusionPartner5prime.gene) at fusion/"Fusions-Gen 5'",
-        validate(fusion.fusionPartner3prime.gene) at fusion/"Fusions-Gen 3'",
+        validate(fusion.patient) at "Patient",
+        validate(fusion.fusionPartner5prime.gene) at "Fusions-Gen 5'",
+        validate(fusion.fusionPartner3prime.gene) at "Fusions-Gen 3'",
       )
-      .errorsOr(fusion)
+      .errorsOr(fusion) on fusion
   }
 
   private implicit def rnaFusionValidator(
@@ -407,11 +411,11 @@ object MTBValidators extends Validators
   ): Validator[Issue,RNAFusion] = {
     fusion =>
       (
-        validate(fusion.patient) at fusion/"Patient",
-        validate(fusion.fusionPartner5prime.gene) at fusion/"Fusions-Gen 5'",
-        validate(fusion.fusionPartner3prime.gene) at fusion/"Fusions-Gen 3'",
+        validate(fusion.patient) at "Patient",
+        validate(fusion.fusionPartner5prime.gene) at "Fusions-Gen 5'",
+        validate(fusion.fusionPartner3prime.gene) at "Fusions-Gen 3'",
       )
-      .errorsOr(fusion)
+      .errorsOr(fusion) on fusion
   }
 
 
@@ -423,51 +427,51 @@ object MTBValidators extends Validators
   ): Validator[Issue,NGSReport] =
     report =>
       (
-        validate(report.patient) at report/"Patient",
-        validate(report.specimen) at report/"Probe",
+        validate(report.patient) at "Patient",
+        validate(report.specimen) at "Probe",
         report.results.tumorCellContent must be (defined) otherwise (
-          Warning("Fehlender Befund") at root/Path.Node[TumorCellContent].name
+          Warning("Fehlender Befund") at Path.Node[TumorCellContent].name
         ) map (_.get) andThen (
           TumorCellContentValidator(TumorCellContent.Method.Bioinformatic)
-        ) at report/"Ergebnisse",
+        ) on "Ergebnisse",
         report.results.tmb must be (defined) otherwise (
-          Warning("Fehlender Befund") at root/Path.Node[TMB].name
+          Warning("Fehlender Befund") at Path.Node[TMB].name
         ) map (_.get) andThen (
           validate(_)
-        ) at report/"Ergebnisse",
+        ) on "Ergebnisse",
         report.results.brcaness must be (defined) otherwise (
-          Warning("Fehlender Befund") at root/Path.Node[BRCAness].name
+          Warning("Fehlender Befund") at Path.Node[BRCAness].name
         ) map (_.get) andThen (
           validate(_)
-        ) at report/"Ergebnisse",
+        ) on "Ergebnisse",
         report.results.hrdScore must be (defined) otherwise (
-          Warning("Fehlender Befund") at root/Path.Node[HRDScore].name
+          Warning("Fehlender Befund") at Path.Node[HRDScore].name
         ) map (_.get) andThen (
           validate(_)
-        ) at report/"Ergebnisse",
+        ) on "Ergebnisse",
         report.results.simpleVariants must be (nonEmpty) otherwise (
-          Warning("Fehlende Befunde") at report/"Ergebnisse"/"Einfache Varianten"
+          Warning("Fehlende Befunde") at "Einfache Varianten"
         ) andThen(
-          validateEach(_) at report/"Ergebnisse"
-        ),
+          validateEach(_)
+        ) on "Ergebnisse",
         report.results.copyNumberVariants must be (nonEmpty) otherwise (
-          Warning("Fehlende Befunde") at report/"Ergebnisse"/"CNVs"
-        ) andThen {
-          validateEach(_) at report/"Ergebnisse"
-        },
+          Warning("Fehlende Befunde") at "CNVs"
+        ) andThen(
+          validateEach(_)
+        ) on "Ergebnisse",
         report.results.dnaFusions must be (nonEmpty) otherwise (
-          Info("Fehlende Befunde") at report/"Ergebnisse"/"DNA-Fusionen"
-        ) andThen {
-          validateEach(_) at report/"Ergebnisse"
-        },
+          Info("Fehlende Befunde") at "DNA-Fusionen"
+        ) andThen(
+          validateEach(_)
+        ) on "Ergebnisse",
         report.results.rnaFusions must be (nonEmpty) otherwise (
-          Info("Fehlende Befunde") at report/"Ergebnisse"/"RNA-Fusionen"
-        ) andThen {
-          validateEach(_) at report/"Ergebnisse"
-        }
+          Info("Fehlende Befunde") at "RNA-Fusionen"
+        ) andThen(
+          validateEach(_)
+        ) on "Ergebnisse"
 
       )
-      .errorsOr(report)
+      .errorsOr(report) on report
 
 
   implicit def medicationRecommendationValidator(
@@ -479,15 +483,15 @@ object MTBValidators extends Validators
   ): Validator[Issue,MTBMedicationRecommendation] =
     rec =>
       (
-        validate(rec.patient) at rec/"Patient",
-        validate(rec.indication) at rec/"Indikation",
-        rec.levelOfEvidence must be (defined) otherwise (Warning("Fehlende Angabe")) at rec/"Evidenz-Level",
-        rec.medication must be (nonEmpty) otherwise (Error("Fehlende Angabe")) at rec/"Medikation",
+        validate(rec.patient) at "Patient",
+        validate(rec.indication) at "Indikation",
+        rec.levelOfEvidence must be (defined) otherwise (Warning("Fehlende Angabe")) at "Evidenz-Level",
+        rec.medication must be (nonEmpty) otherwise (Error("Fehlende Angabe")) at "Medikation",
         rec.supportingEvidence must be (nonEmpty) otherwise (Warning("Fehlende Angabe")) andThen (
           validateEach(_)
-        ) at rec/"Stützende molekulare Alteration",
+        ) at "Stützende molekulare Alteration",
       )
-      .errorsOr(rec)
+      .errorsOr(rec) on rec
 
 
   implicit def carePlanValidator(
@@ -499,18 +503,51 @@ object MTBValidators extends Validators
   ): Validator[Issue,MTBCarePlan] =
     carePlan =>
       (
-        validate(carePlan.patient) at carePlan/"Patient",
-        validate(carePlan.indication) at carePlan/"Indikation",
+        validate(carePlan.patient) at "Patient",
+        validate(carePlan.indication) at "Indikation",
         carePlan.medicationRecommendations.filter(_.nonEmpty) must be (defined) orElse (
           carePlan.statusReason must be (defined)
         ) otherwise (
-          Error(s"Fehlende Angabe: Es müssen entwder Therapie-Empfehlungen oder Status-Grund '${MTBCarePlan.StatusReason.display(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
-            at carePlan/"Status-Grund"
+          Error(s"Fehlende Angabe: Es müssen entwder Therapie-Empfehlungen oder explizit Status-Grund '${MTBCarePlan.StatusReason.display(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
+            at "Status-Grund"
         ) map (
           _ => carePlan.medicationRecommendations.getOrElse(List.empty)
-        ) andThen (validateEach(_) at carePlan/"Therapie-Empfehlungen")
+        ) andThen (validateEach(_) on "Therapie-Empfehlungen")
       )
-      .errorsOr(carePlan)
+      .errorsOr(carePlan) on carePlan
+
+
+  implicit def claimValidator(
+    implicit
+    patient: Patient,
+    recommendations: Iterable[MTBMedicationRecommendation],
+    claimResponses: Iterable[ClaimResponse]
+  ): Validator[Issue,Claim] =
+    claim =>
+      (
+        validate(claim.patient) at "Patient",
+        validate(claim.recommendation) at Path.Node[MTBMedicationRecommendation].name,
+        claim.id must be (in (claimResponses.flatMap(_.claim.id))) otherwise (
+          Warning(s"Keine zugehörige ${Path.Node[ClaimResponse].name} vorhanden") at root
+        ) 
+      )
+      .errorsOr(claim) on claim
+
+
+  implicit def claimReseponseValidator(
+    implicit
+    patient: Patient,
+    claims: Iterable[Claim]
+  ): Validator[Issue,ClaimResponse] =
+    response =>
+      (
+        validate(response.patient) at "Patient",
+        validate(response.claim) at Path.Node[Claim].name,
+        response.statusReason must be (defined) otherwise (Warning(s"Fehlende Angabe")) at "Status-Grund"
+      )
+      .errorsOr(response) on response
+
+
 
 
   def patientRecordValidator(
@@ -538,57 +575,73 @@ object MTBValidators extends Validators
       implicit val variants = 
         record.getNgsReports.flatMap(_.variants)
 
+      implicit val claims =
+        record.getClaims
+
+      implicit val claimResponses =
+        record.getClaimResponses
+
 
       (
         diagnoses must be (nonEmpty) otherwise (
-          Error(s"Fehlende Angabe") at root/"Diagnosen"
+          Error(s"Fehlende Angabe") at "Diagnosen"
         ) andThen (
           validateEach(_)
         ),        
         record.getGuidelineMedicationTherapies must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"Leitlinien-Therapien"
+          Warning(s"Fehlende Angabe") at "Leitlinien-Therapien"
         ) andThen {
           implicit val v = GuidelineTherapyValidator
           validateEach(_)
         },
         record.getGuidelineProcedures must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"Leitlinien-Prozeduren"
+          Warning(s"Fehlende Angabe") at "Leitlinien-Prozeduren"
         ) andThen (
           validateEach(_)
         ),
         record.getPerformanceStatus must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"Performance-Status"
+          Warning(s"Fehlende Angabe") at "Performance-Status"
         ) andThen (
           validateEach(_)
         ),
         specimens must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"Tumor-Proben"
+          Warning(s"Fehlende Angabe") at "Tumor-Proben"
         ) andThen (
           validateEach(_)
         ),
         record.getHistologyReports must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"Histologie-Berichte"
+          Warning(s"Fehlende Angabe") at "Histologie-Berichte"
         ) andThen (
           validateEach(_)
         ),
         //TODO: IHC-Reports
         record.getNgsReports must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"NGS-Berichte"
+          Warning(s"Fehlende Angabe") at "NGS-Berichte"
         ) andThen (
           validateEach(_)
         ),
         record.getCarePlans must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"MTB-Beschlüsse"
+          Warning(s"Fehlende Angabe") at "MTB-Beschlüsse"
+        ) andThen (
+          validateEach(_)
+        ),
+        claims must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge"
+        ) andThen (
+          validateEach(_)
+        ),
+        claimResponses must be (nonEmpty) otherwise (
+          Warning(s"Fehlende Angabe") at "Kostenübernahme-Antworten"
         ) andThen (
           validateEach(_)
         ),
         record.getMedicationTherapies must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at root/"MTB-Therapien"
+          Warning(s"Fehlende Angabe") at "MTB-Therapien"
         ) map (_.flatMap(_.history)) andThen {
           implicit val v = MTBTherapyValidator
           validateEach(_)
         }
-        
+                
       )
       .errorsOr(record)
   }
