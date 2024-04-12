@@ -17,6 +17,13 @@ import de.dnpm.dip.mtb.model._
 trait Invalidators
 {
 
+  def invalidate(patient: Patient) =
+    patient.copy(
+      dateOfDeath = None,
+      healthInsurance = None
+    )
+
+
   def invalidate(diagnosis: MTBDiagnosis) =
     diagnosis.copy(
       patient = Reference.from(Id[Patient]("123")),
@@ -51,6 +58,8 @@ trait Invalidators
 
   def invalidate(record: MTBPatientRecord): MTBPatientRecord =
     record.copy(
+      patient =
+        invalidate(record.patient),
       diagnoses =
         Some(record.getDiagnoses.map(invalidate)),
       guidelineMedicationTherapies =
