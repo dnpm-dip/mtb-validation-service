@@ -38,6 +38,10 @@ import de.dnpm.dip.service.validation.{
   Validators
 }
 import de.dnpm.dip.mtb.model._
+import TumorCellContent.Method.{
+  Bioinformatic,
+  Histologic
+}
 import Issue.{
   Error,
   Info,
@@ -48,7 +52,7 @@ import Path.root
 import Path.syntax._
 
 
-object MTBValidators extends Validators
+trait MTBValidators extends Validators
 {
 
   private implicit def displayEnumValue[E <: CodedEnum](
@@ -116,14 +120,15 @@ object MTBValidators extends Validators
     Path.Node("Kostenübernahme-Antwort")
 
 
-//  implicit val _Node: Path.Node[] =
-//    Path.Node("")
+  implicit val icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]]
 
+  implicit val icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
 
+  implicit val atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
 
-  implicit def icdo3TCodingValidator(
-    implicit icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
-  ): Validator[Issue.Builder,Coding[ICDO3.T]] = {
+  implicit val hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]] 
+
+  implicit lazy val icdo3TCodingValidator: Validator[Issue.Builder,Coding[ICDO3.T]] = {
     coding =>
 
       val icdo3t =
@@ -134,9 +139,7 @@ object MTBValidators extends Validators
       csCodingValidator(icdo3t)(coding)
   }
 
-  implicit def icdo3MCodingValidator(
-    implicit icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
-  ): Validator[Issue.Builder,Coding[ICDO3.M]] = {
+  implicit lazy val icdo3MCodingValidator: Validator[Issue.Builder,Coding[ICDO3.M]] = {
     coding =>
 
       val icdo3m =
@@ -148,25 +151,9 @@ object MTBValidators extends Validators
   }
 
 
-  implicit val patientValidator: Validator[Issue,Patient] =
-    patient => 
-      (
-        patient.healthInsurance must be (defined) otherwise (
-          Warning("Fehlende Angabe") at "Krankenkasse"
-        ),
-        patient.dateOfDeath must be (defined) otherwise (
-          Info("Fehlende optionale Angabe, ggf. nachprüfen") at "Todesdatum"
-        )
-      )
-      .errorsOr(patient) on patient
-
-
-
   implicit def diagnosisValidator(
     implicit
     patient: Patient,
-    icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]],
-    icdo3: ICDO3.Catalogs[Id,Applicative[Id]],
   ): Validator[Issue,MTBDiagnosis] =
     diagnosis =>
       (
@@ -191,7 +178,6 @@ object MTBValidators extends Validators
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
   ): Validator[Issue,MTBMedicationTherapy] =
     TherapyValidator[MTBMedicationTherapy] combineWith (
       therapy =>
@@ -210,7 +196,6 @@ object MTBValidators extends Validators
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
   ): Validator[Issue,MTBMedicationTherapy] =
     TherapyValidator[MTBMedicationTherapy] combineWith (
       therapy =>
@@ -273,7 +258,7 @@ object MTBValidators extends Validators
         validate(specimen.patient) at "Patient",
         validate(specimen.diagnosis) at "Diagnose",
         specimen.`type` must not (be (Coding(TumorSpecimen.Type.Unknown))) otherwise (
-          Warning(s"Fehlende/Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'") at "Typ"
+          Warning(s"Fehlende bzw. Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'") at "Proben-Typ"
         )
       )
       .errorsOr(specimen) on specimen
@@ -287,24 +272,24 @@ object MTBValidators extends Validators
     patient: Patient,
     specimens: Iterable[TumorSpecimen],
   ): Validator[Issue,TumorCellContent] =
-    ObservationValidator[TumorCellContent](ClosedInterval(0.0 -> 1.0)) combineWith {
-      tcc =>
-        val expectedMethod = Coding(method)
-        (
-          validate(tcc.specimen) at "Probe",
-          tcc.method must be (expectedMethod) otherwise (
-            Error(s"Ungültige Bestimmungs-Methode, '${DisplayLabel.of(expectedMethod)}' erwartet")
-          ) at "Methode",
-        )
-        .errorsOr(tcc) on tcc
-    }
+    ObservationValidator[TumorCellContent](ClosedInterval(0.0 -> 1.0))
+      .combineWith {
+        tcc =>
+          val expectedMethod = Coding(method)
+          (
+            validate(tcc.specimen) at "Probe",
+            tcc.method must be (expectedMethod) otherwise (
+              Error(s"Ungültige Bestimmungs-Methode, '${DisplayLabel.of(expectedMethod)}' erwartet")
+            ) at "Methode",
+          )
+          .errorsOr(tcc) on tcc
+      }
   
 
   implicit def tumorMorphologyValidator(
     implicit
     patient: Patient,
     specimens: Iterable[TumorSpecimen],
-    icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
   ): Validator[Issue,TumorMorphology] =
     ObservationValidator[TumorMorphology] combineWith (
       obs => (validate(obs.specimen) at "Probe") map (_ => obs) on obs
@@ -315,13 +300,14 @@ object MTBValidators extends Validators
     implicit
     patient: Patient,
     specimens: Iterable[TumorSpecimen],
-    icdo3: ICDO3.Catalogs[Id,Applicative[Id]],
   ): Validator[Issue,HistologyReport] = {
      report =>
 
+      implicit val tumorCellContentValidator =
+        TumorCellContentValidator(Histologic)
+
       val tumorMorphology  = report.results.tumorMorphology
       val tumorCellContent = report.results.tumorCellContent
-      val expectedMethod   = Coding(TumorCellContent.Method.Histologic).code
 
       (
         validate(report.patient) at "Patient",
@@ -334,8 +320,8 @@ object MTBValidators extends Validators
         ) andThen (validateOpt(_)) on "Ergebnisse",
         tumorCellContent must be (defined) otherwise (
           Warning("Fehlender Befund") at Path.Node[TumorCellContent].name
-        ) map (_.get) andThen (
-          TumorCellContentValidator(TumorCellContent.Method.Histologic)
+        ) andThen (
+          validateOpt(_) 
         ) on "Ergebnisse"
       )
       .errorsOr(report) on report
@@ -366,7 +352,6 @@ object MTBValidators extends Validators
   private implicit def snvValidator(
     implicit
     patient: Patient,
-    geneValidator: Validator[Issue.Builder,Coding[HGNC]]
   ): Validator[Issue,SNV] =
     snv =>
       (
@@ -378,7 +363,6 @@ object MTBValidators extends Validators
   private implicit def cnvValidator(
     implicit
     patient: Patient,
-    geneValidator: Validator[Issue.Builder,Coding[HGNC]]
   ): Validator[Issue,CNV] =
     cnv =>
       (
@@ -391,7 +375,6 @@ object MTBValidators extends Validators
   private implicit def dnaFusionValidator(
     implicit
     patient: Patient,
-    geneValidator: Validator[Issue.Builder,Coding[HGNC]]
   ): Validator[Issue,DNAFusion] = {
     fusion =>
       (
@@ -405,7 +388,6 @@ object MTBValidators extends Validators
   private implicit def rnaFusionValidator(
     implicit
     patient: Patient,
-    geneValidator: Validator[Issue.Builder,Coding[HGNC]]
   ): Validator[Issue,RNAFusion] = {
     fusion =>
       (
@@ -421,16 +403,18 @@ object MTBValidators extends Validators
     implicit
     patient: Patient,
     specimens: Iterable[TumorSpecimen],
-    hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]]
-  ): Validator[Issue,NGSReport] =
+  ): Validator[Issue,NGSReport] = {
     report =>
+      implicit val tumorCellContentValidator =
+        TumorCellContentValidator(Bioinformatic)
+
       (
         validate(report.patient) at "Patient",
         validate(report.specimen) at "Probe",
         report.results.tumorCellContent must be (defined) otherwise (
           Warning("Fehlender Befund") at Path.Node[TumorCellContent].name
-        ) map (_.get) andThen (
-          TumorCellContentValidator(TumorCellContent.Method.Bioinformatic)
+        ) andThen (
+          validateOpt(_)
         ) on "Ergebnisse",
         report.results.tmb must be (defined) otherwise (
           Warning("Fehlender Befund") at Path.Node[TMB].name
@@ -470,14 +454,13 @@ object MTBValidators extends Validators
 
       )
       .errorsOr(report) on report
-
+  }
 
   implicit def medicationRecommendationValidator(
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     variants: Iterable[Variant],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]],
   ): Validator[Issue,MTBMedicationRecommendation] =
     rec =>
       (
@@ -485,9 +468,11 @@ object MTBValidators extends Validators
         validate(rec.indication) at "Indikation",
         rec.levelOfEvidence must be (defined) otherwise (Warning("Fehlende Angabe")) at "Evidenz-Level",
         rec.medication must be (nonEmpty) otherwise (Error("Fehlende Angabe")) at "Medikation",
-        rec.supportingEvidence must be (nonEmpty) otherwise (Warning("Fehlende Angabe")) andThen (
+        rec.supportingEvidence.getOrElse(List.empty) must be (nonEmpty) otherwise (
+          Warning("Fehlende Angabe")
+        ) andThen (
           validateEach(_)
-        ) at "Stützende molekulare Alteration",
+        ) at "Stützende molekulare Alteration(en)",
       )
       .errorsOr(rec) on rec
 
@@ -497,20 +482,16 @@ object MTBValidators extends Validators
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     variants: Iterable[Variant],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]],
   ): Validator[Issue,MTBCarePlan] =
     carePlan =>
       (
         validate(carePlan.patient) at "Patient",
         validate(carePlan.indication) at "Indikation",
-        carePlan.medicationRecommendations.filter(_.nonEmpty) must be (defined) orElse (
-          carePlan.statusReason must be (defined)
-        ) otherwise (
-          Error(s"Fehlende Angabe: Es müssen entwder Therapie-Empfehlungen oder explizit Status-Grund '${DisplayLabel.of(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
+        (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.statusReason) must be (defined) otherwise (
+          Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Status-Grund '${DisplayLabel.of(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
             at "Status-Grund"
-        ) map (
-          _ => carePlan.medicationRecommendations.getOrElse(List.empty)
-        ) andThen (validateEach(_) on "Therapie-Empfehlungen")
+        ),
+        ifDefined(carePlan.medicationRecommendations)(validateEach(_))
       )
       .errorsOr(carePlan) on carePlan
 
@@ -532,7 +513,7 @@ object MTBValidators extends Validators
       .errorsOr(claim) on claim
 
 
-  implicit def claimReseponseValidator(
+  implicit def claimResponseValidator(
     implicit
     patient: Patient,
     claims: Iterable[Claim]
@@ -546,14 +527,7 @@ object MTBValidators extends Validators
       .errorsOr(response) on response
 
 
-
-  def patientRecordValidator(
-    implicit 
-    icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]],
-    icdo3: ICDO3.Catalogs[Id,Applicative[Id]],
-    atc: CodeSystemProvider[ATC,Id,Applicative[Id]],
-    hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]]
-  ): Validator[Issue,MTBPatientRecord] = {
+  val patientRecordValidator: Validator[Issue,MTBPatientRecord] = {
     record =>
 
       implicit val patient =
@@ -643,5 +617,30 @@ object MTBValidators extends Validators
       )
       .errorsOr(record)
   }
+
+}
+
+object MTBValidators extends MTBValidators
+{
+
+  implicit lazy val hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]] =
+    HGNC.GeneSet
+      .getInstance[Id]
+      .get
+
+  implicit lazy val atc: CodeSystemProvider[ATC,Id,Applicative[Id]] =
+    ATC.Catalogs
+      .getInstance[Id]
+      .get
+
+  implicit lazy val icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]] =
+    ICD10GM.Catalogs
+      .getInstance[Id]
+      .get
+
+  implicit lazy val icdo3: ICDO3.Catalogs[Id,Applicative[Id]] =
+    ICDO3.Catalogs
+      .getInstance[Id]
+      .get
 
 }

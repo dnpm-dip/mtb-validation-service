@@ -16,6 +16,26 @@ import de.dnpm.dip.mtb.validation.api.{
 }
 
 
+class MTBValidationServiceProviderImpl extends MTBValidationServiceProvider
+{
+  override def getInstance =
+    MTBValidationServiceImpl.instance
+  
+}
+
+
+object MTBValidationServiceImpl
+{
+
+  lazy val instance =
+    new MTBValidationServiceImpl(
+      MTBValidators.patientRecordValidator,
+      MTBValidationRepository.instance
+    )
+
+}
+
+
 class MTBValidationServiceImpl
 (
   private val validator: Validator[Issue,MTBPatientRecord],
@@ -23,7 +43,6 @@ class MTBValidationServiceImpl
 )
 extends BaseValidationService(
   validator,
-  Issue.Severity.Error,
   repo
 )
 with MTBValidationService
