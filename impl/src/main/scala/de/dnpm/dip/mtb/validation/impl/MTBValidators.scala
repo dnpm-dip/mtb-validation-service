@@ -25,6 +25,7 @@ import de.dnpm.dip.coding.atc.ATC
 import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
+import de.dnpm.dip.coding.hgvs.HGVS
 import de.dnpm.dip.model.{
   ClosedInterval,
   Patient,
@@ -356,7 +357,12 @@ trait MTBValidators extends Validators
     snv =>
       (
         validate(snv.patient) at "Patient",
-        validateOpt(snv.gene) at "Gen"
+        validateOpt(snv.gene) at "Gen",
+        ifDefined(snv.proteinChange.map(_.code.value))(
+          code => code must matchRegex (HGVS.Protein.threeLetterAA) otherwise (
+            Error(s"Ungültiger Code '$code', erwarte 3-Buchstaben-Format") at "Amino-Säure-Austausch"
+          )
+        )
       )
       .errorsOr(snv) on snv
 

@@ -20,7 +20,6 @@ class MTBValidationServiceProviderImpl extends MTBValidationServiceProvider
 {
   override def getInstance =
     MTBValidationServiceImpl.instance
-  
 }
 
 
@@ -30,7 +29,7 @@ object MTBValidationServiceImpl
   lazy val instance =
     new MTBValidationServiceImpl(
       MTBValidators.patientRecordValidator,
-      MTBValidationRepository.instance
+      MTBValidationRepository.getInstance.get
     )
 
 }
