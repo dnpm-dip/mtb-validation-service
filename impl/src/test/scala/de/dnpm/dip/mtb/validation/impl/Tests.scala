@@ -49,7 +49,7 @@ class Tests extends AsyncFlatSpec with Invalidators
 
     (service ! Validate(record)).map {
       case Left(FatalIssuesDetected(report)) =>
-//        toJson(report) pipe prettyPrint pipe println
+        toJson(report) pipe prettyPrint pipe println
         succeed
       case _ => fail()
     }

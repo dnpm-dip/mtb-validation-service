@@ -358,11 +358,7 @@ trait MTBValidators extends Validators
       (
         validate(snv.patient) at "Patient",
         validateOpt(snv.gene) at "Gen",
-        ifDefined(snv.proteinChange.map(_.code.value))(
-          code => code must matchRegex (HGVS.Protein.threeLetterAA) otherwise (
-            Error(s"Ungültiger Code '$code', erwarte 3-Buchstaben-Format") at "Amino-Säure-Austausch"
-          )
-        )
+        validateOpt(snv.proteinChange)
       )
       .errorsOr(snv) on snv
 

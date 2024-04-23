@@ -64,7 +64,7 @@ trait Invalidators
 
     def invalidate(snv: SNV): SNV =
       snv.copy(
-        proteinChange = snv.proteinChange.map(c => c.copy(code = Code[HGVS]("G12C")))
+        proteinChange = snv.proteinChange.map(_ => Coding[HGVS.Protein]("G12C"))
       )
 
     ngs.copy(
