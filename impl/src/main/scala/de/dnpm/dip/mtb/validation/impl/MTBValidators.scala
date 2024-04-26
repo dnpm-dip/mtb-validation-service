@@ -1,11 +1,10 @@
 package de.dnpm.dip.mtb.validation.impl
 
 
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit.WEEKS
 import scala.util.chaining._
-import cats.{
-  Applicative,
-  Id
-}
+import cats.Applicative
 import cats.data.Ior
 import cats.syntax.validated._
 import de.ekut.tbi.validation.{
@@ -27,12 +26,20 @@ import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
 import de.dnpm.dip.coding.hgvs.HGVS
 import de.dnpm.dip.model.{
+  History,
+  Id,
   ClosedInterval,
   Patient,
   Reference,
   Therapy,
   TherapyRecommendation
 }
+import Therapy.Status.{
+  Ongoing,
+  Completed,
+  Stopped
+}
+import de.dnpm.dip.model.Therapy.StatusReason.Progression
 import de.dnpm.dip.service.validation.{
   HasId,
   Issue,
@@ -62,8 +69,8 @@ trait MTBValidators extends Validators
     Displays[E#Value](e => cs.conceptWithCode(e.toString).get.display)
 
 
-  private implicit val whoGradingCsp: CodeSystemProvider[WHOGrading,Id,Applicative[Id]] =
-    new WHOGrading.Provider.Facade[Id]
+  private implicit val whoGradingCsp: CodeSystemProvider[WHOGrading,cats.Id,Applicative[cats.Id]] =
+    new WHOGrading.Provider.Facade[cats.Id]
 
 
   implicit val performanceStatusNode: Path.Node[PerformanceStatus] =
@@ -121,13 +128,13 @@ trait MTBValidators extends Validators
     Path.Node("Kostenübernahme-Antwort")
 
 
-  implicit val icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]]
+  implicit val icd10gm: CodeSystemProvider[ICD10GM,cats.Id,Applicative[cats.Id]]
 
-  implicit val icdo3: ICDO3.Catalogs[Id,Applicative[Id]]
+  implicit val icdo3: ICDO3.Catalogs[cats.Id,Applicative[cats.Id]]
 
-  implicit val atc: CodeSystemProvider[ATC,Id,Applicative[Id]]
+  implicit val atc: CodeSystemProvider[ATC,cats.Id,Applicative[cats.Id]]
 
-  implicit val hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]] 
+  implicit val hgnc: CodeSystemProvider[HGNC,cats.Id,Applicative[cats.Id]] 
 
   implicit lazy val icdo3TCodingValidator: Validator[Issue.Builder,Coding[ICDO3.T]] = {
     coding =>
@@ -152,9 +159,65 @@ trait MTBValidators extends Validators
   }
 
 
+  private def dateOfDeathOrCensoring(
+    patient: Patient
+  )(
+    implicit
+    therapies: Seq[History[MTBMedicationTherapy]]
+  ): (LocalDate,Boolean) =
+    patient
+      .dateOfDeath
+      .map(_ -> true)
+      .getOrElse(
+        // 1. Censoring time strategy: fall back to date of last therapy follow-up
+        therapies
+          .flatMap(_.history.map(_.recordedOn))
+          .maxOption
+          // 2. Censoring time strategy: fall back to upload date, i.e. now
+          .getOrElse(LocalDate.now) -> false
+        )
+
+  private val progressionRecist =
+    Set(
+      Coding(RECIST.PD),
+      Coding(RECIST.SD)
+    )
+
+  private def dateOfProgressionOrCensoring(
+    therapy: MTBMedicationTherapy,
+    patient: Patient
+  )(
+    implicit lastResponses: Map[Id[MTBMedicationTherapy],Response]
+  ): (LocalDate,Boolean) =
+    lastResponses
+      .get(therapy.id)
+      // 1. Look for date of latest response with recorded progression
+      .collect {
+        case response if progressionRecist contains response.value => response.effectiveDate
+      }
+      // 2. Check whether therapy was stopped due to progression and take the end or recording date
+      .orElse(
+        therapy
+          .statusReason
+          .collect {
+            case Therapy.StatusReason(Progression) =>
+              therapy.period
+                .flatMap(_.endOption)
+                .getOrElse(therapy.recordedOn)
+          }
+      )
+      // 3. Use patient date of death as "progression" date
+      .orElse(patient.dateOfDeath)
+      .map(_ -> true)
+      // 4. Censoring: therapy recording date
+      .getOrElse(therapy.recordedOn -> false)
+   .tap(println)
+
+
   implicit def diagnosisValidator(
     implicit
     patient: Patient,
+    therapies: Seq[History[MTBMedicationTherapy]]
   ): Validator[Issue,MTBDiagnosis] =
     diagnosis =>
       (
@@ -169,7 +232,16 @@ trait MTBValidators extends Validators
         ),
         diagnosis.guidelineTreatmentStatus must be (defined) otherwise (
           Warning("Fehlende Angabe") at "Leitlinien-Behandlungsstatus"
-        )
+        ),
+        ifDefined(diagnosis.recordedOn){
+          start =>
+        
+            val (observationDate,_) = dateOfDeathOrCensoring(patient)
+        
+            WEEKS.between(start,observationDate) must be (positive) otherwise (
+              Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
+            ) map (_ => start)
+        }
       )
       .errorsOr(diagnosis) on diagnosis
 
@@ -190,13 +262,13 @@ trait MTBValidators extends Validators
       )
 
 
-  import Therapy.Status.{Ongoing,Completed,Stopped}
 
   def MTBTherapyValidator(
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
+    lastResponsesByTherapy: Map[Id[MTBMedicationTherapy],Response]
   ): Validator[Issue,MTBMedicationTherapy] =
     TherapyValidator[MTBMedicationTherapy] combineWith (
       therapy =>
@@ -227,7 +299,17 @@ trait MTBValidators extends Validators
           },
           therapy.statusReason must be (defined) otherwise (
             Warning("Fehlende Angabe") at "Status-Grund"
-          )
+          ),
+          ifDefined(therapy.period.map(_.start)){
+            start =>
+          
+              val (observationDate,_) =
+                dateOfProgressionOrCensoring(therapy,patient)
+          
+              WEEKS.between(start,observationDate) must be (positive) otherwise (
+                Error("Die aus Therapie-Start und Progressions- bzw Zensierungsdatum ermittelte PFS-Zeit wäre negativ!") at "PFS-Zeit"
+              ) map (_ => start)
+          }
         )
         .errorsOr(therapy) on therapy
       )
@@ -529,6 +611,7 @@ trait MTBValidators extends Validators
       .errorsOr(response) on response
 
 
+
   val patientRecordValidator: Validator[Issue,MTBPatientRecord] = {
     record =>
 
@@ -554,6 +637,17 @@ trait MTBValidators extends Validators
       implicit val claimResponses =
         record.getClaimResponses
 
+      implicit val therapyHistories =
+        record.getMedicationTherapies
+
+      implicit val lastResponsesByTherapy =
+        record
+         .getResponses
+         .groupBy(_.therapy)
+         .collect {
+           case (ref,responses) if ref.id.isDefined =>
+             ref.id.get -> responses.maxBy(_.effectiveDate)
+         }
 
       (
         validate(record.patient),
@@ -625,24 +719,24 @@ trait MTBValidators extends Validators
 object MTBValidators extends MTBValidators
 {
 
-  implicit lazy val hgnc: CodeSystemProvider[HGNC,Id,Applicative[Id]] =
+  implicit lazy val hgnc: CodeSystemProvider[HGNC,cats.Id,Applicative[cats.Id]] =
     HGNC.GeneSet
-      .getInstance[Id]
+      .getInstance[cats.Id]
       .get
 
-  implicit lazy val atc: CodeSystemProvider[ATC,Id,Applicative[Id]] =
+  implicit lazy val atc: CodeSystemProvider[ATC,cats.Id,Applicative[cats.Id]] =
     ATC.Catalogs
-      .getInstance[Id]
+      .getInstance[cats.Id]
       .get
 
-  implicit lazy val icd10gm: CodeSystemProvider[ICD10GM,Id,Applicative[Id]] =
+  implicit lazy val icd10gm: CodeSystemProvider[ICD10GM,cats.Id,Applicative[cats.Id]] =
     ICD10GM.Catalogs
-      .getInstance[Id]
+      .getInstance[cats.Id]
       .get
 
-  implicit lazy val icdo3: ICDO3.Catalogs[Id,Applicative[Id]] =
+  implicit lazy val icdo3: ICDO3.Catalogs[cats.Id,Applicative[cats.Id]] =
     ICDO3.Catalogs
-      .getInstance[Id]
+      .getInstance[cats.Id]
       .get
 
 }

@@ -11,10 +11,13 @@ import de.dnpm.dip.coding.atc.ATC
 import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.model.{
+  ClosedPeriod,
   Id,
   Patient,
-  Reference
+  Reference,
+  Therapy
 }
+import Therapy.StatusReason.Progression
 import de.dnpm.dip.mtb.model._
 
 
@@ -41,7 +44,11 @@ trait Invalidators
     therapy.copy(
       patient = Reference.from(Id[Patient]("123")),
       therapyLine = None,
-      period = None
+//      statusReason = None,
+//      period = None,
+      statusReason = Some(Coding(Progression)),
+      period = therapy.period.map(p => ClosedPeriod(p.start,p.start.minusWeeks(2))),
+      recordedOn = therapy.period.map(_.start).get.minusWeeks(2)
     )
 
 
@@ -89,7 +96,22 @@ trait Invalidators
       specimens =  
         Some(record.getSpecimens.map(invalidate)),
       ngsReports =
-        Some(record.getNgsReports.map(invalidate))
+        Some(record.getNgsReports.map(invalidate)),
+      medicationTherapies =
+        Some(
+          record.getMedicationTherapies.map(
+            th => th.copy(history = th.history.map(invalidate))
+          )
+        ),
+      responses =
+        Some(
+          record.getResponses.map(
+            r => r.copy(
+              value = Coding(RECIST.PD),
+              effectiveDate = record.patient.birthDate
+            )
+          )
+        )
     )
 
 }
