@@ -211,7 +211,6 @@ trait MTBValidators extends Validators
       .map(_ -> true)
       // 4. Censoring: therapy recording date
       .getOrElse(therapy.recordedOn -> false)
-   .tap(println)
 
 
   implicit def diagnosisValidator(
@@ -535,7 +534,6 @@ trait MTBValidators extends Validators
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse"
-
       )
       .errorsOr(report) on report
   }

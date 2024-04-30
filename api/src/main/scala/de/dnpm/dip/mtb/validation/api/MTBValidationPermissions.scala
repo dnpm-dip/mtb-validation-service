@@ -1,8 +1,12 @@
 package de.dnpm.dip.mtb.validation.api
 
 
+
 import de.dnpm.dip.service.auth._
-import de.dnpm.dip.service.validation.ValidationPermissions
+import de.dnpm.dip.service.validation.{
+  ValidationPermissions,
+  ValidationRoles
+}
 
 
 
@@ -17,20 +21,7 @@ class MTBValidationPermissionsSPI extends PermissionsSPI
 
 
 
-object MTBValidationRoles extends Roles
-{
-
-  val BasicMTBMember =
-    Role(
-      "MTB-Documentarist",
-      MTBValidationPermissions.permissions
-    )
-
-  override val roles: Set[Role] =
-    Set(BasicMTBMember)
-
-}
-
+object MTBValidationRoles extends ValidationRoles("MTB",MTBValidationPermissions)
 
 class MTBValidationRolesSPI extends RolesSPI
 {
