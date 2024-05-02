@@ -54,6 +54,7 @@ import Issue.{
   Error,
   Info,
   Path,
+  Severity,
   Warning
 }
 import Path.root
@@ -164,17 +165,16 @@ trait MTBValidators extends Validators
   )(
     implicit
     therapies: Seq[History[MTBMedicationTherapy]]
-  ): (LocalDate,Boolean) =
+  ): LocalDate =
     patient
       .dateOfDeath
-      .map(_ -> true)
       .getOrElse(
         // 1. Censoring time strategy: fall back to date of last therapy follow-up
         therapies
           .flatMap(_.history.map(_.recordedOn))
           .maxOption
           // 2. Censoring time strategy: fall back to upload date, i.e. now
-          .getOrElse(LocalDate.now) -> false
+          .getOrElse(LocalDate.now)
         )
 
   private val progressionRecist =
@@ -188,7 +188,7 @@ trait MTBValidators extends Validators
     patient: Patient
   )(
     implicit lastResponses: Map[Id[MTBMedicationTherapy],Response]
-  ): (LocalDate,Boolean) =
+  ): LocalDate =
     lastResponses
       .get(therapy.id)
       // 1. Look for date of latest response with recorded progression
@@ -208,9 +208,8 @@ trait MTBValidators extends Validators
       )
       // 3. Use patient date of death as "progression" date
       .orElse(patient.dateOfDeath)
-      .map(_ -> true)
       // 4. Censoring: therapy recording date
-      .getOrElse(therapy.recordedOn -> false)
+      .getOrElse(therapy.recordedOn)
 
 
   implicit def diagnosisValidator(
@@ -223,21 +222,20 @@ trait MTBValidators extends Validators
         validate(diagnosis.patient) at "Patient",
         validate(diagnosis.code) at "Code",
         diagnosis.topography must be (defined) otherwise (
-          Info("Fehlende optionale Angabe, ggf. nachprüfen")
-        ) andThen (validateOpt(_)) at "Topographie",
+          MissingOptValue("Topographie")
+        ) andThen (
+          validateOpt(_) at "Topographie"
+        ),
         validateOpt(diagnosis.whoGrading) at "WHO-Graduierung",
         diagnosis.stageHistory must be (defined) otherwise (
-          Warning("Fehlende Angabe") at "Tumor-Ausbreitungsstadium"
+          MissingValue("Tumor-Ausbreitungsstadium")
         ),
         diagnosis.guidelineTreatmentStatus must be (defined) otherwise (
-          Warning("Fehlende Angabe") at "Leitlinien-Behandlungsstatus"
+          MissingValue("Leitlinien-Behandlungsstatus")
         ),
         ifDefined(diagnosis.recordedOn){
           start =>
-        
-            val (observationDate,_) = dateOfDeathOrCensoring(patient)
-        
-            WEEKS.between(start,observationDate) must be (positive) otherwise (
+            WEEKS.between(start,dateOfDeathOrCensoring(patient)) must be (positive) otherwise (
               Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
             ) map (_ => start)
         }
@@ -254,7 +252,7 @@ trait MTBValidators extends Validators
     TherapyValidator[MTBMedicationTherapy] combineWith (
       therapy =>
         therapy.medication must be (defined) otherwise (
-           Warning("Fehlende Angabe") at "Medikation"
+           MissingValue("Medikation")
         ) map (_.get.toList) andThen (
           validateEach(_) at "Medikation"
         ) map (_ => therapy) on therapy
@@ -297,15 +295,11 @@ trait MTBValidators extends Validators
             case _ => None.validNel[Issue]
           },
           therapy.statusReason must be (defined) otherwise (
-            Warning("Fehlende Angabe") at "Status-Grund"
+            MissingValue("Status-Grund")
           ),
           ifDefined(therapy.period.map(_.start)){
             start =>
-          
-              val (observationDate,_) =
-                dateOfProgressionOrCensoring(therapy,patient)
-          
-              WEEKS.between(start,observationDate) must be (positive) otherwise (
+              WEEKS.between(start,dateOfProgressionOrCensoring(therapy,patient)) must be (positive) otherwise (
                 Error("Die aus Therapie-Start und Progressions- bzw Zensierungsdatum ermittelte PFS-Zeit wäre negativ!") at "PFS-Zeit"
               ) map (_ => start)
           }
@@ -398,10 +392,10 @@ trait MTBValidators extends Validators
           Error("Keine Befunde vorhanden, weder Tumor-Morphologie noch -Zellgehalt") at "Ergebnisse"
         ),
         tumorMorphology must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.Node[TumorMorphology].name
+          MissingResult[TumorMorphology]
         ) andThen (validateOpt(_)) on "Ergebnisse",
         tumorCellContent must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.Node[TumorCellContent].name
+          MissingResult[TumorCellContent]
         ) andThen (
           validateOpt(_) 
         ) on "Ergebnisse"
@@ -495,42 +489,42 @@ trait MTBValidators extends Validators
         validate(report.patient) at "Patient",
         validate(report.specimen) at "Probe",
         report.results.tumorCellContent must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.Node[TumorCellContent].name
+          MissingResult[TumorCellContent]
         ) andThen (
           validateOpt(_)
         ) on "Ergebnisse",
         report.results.tmb must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.Node[TMB].name
+          MissingResult[TMB]
         ) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
         report.results.brcaness must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.Node[BRCAness].name
+          MissingResult[BRCAness]
         ) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
         report.results.hrdScore must be (defined) otherwise (
-          Warning("Fehlender Befund") at Path.Node[HRDScore].name
+          MissingResult[HRDScore]
         ) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
         report.results.simpleVariants must be (nonEmpty) otherwise (
-          Warning("Fehlende Befunde") at "Einfache Varianten"
+          MissingResult("Einfache Varianten")
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse",
         report.results.copyNumberVariants must be (nonEmpty) otherwise (
-          Warning("Fehlende Befunde") at "CNVs"
+          MissingResult("CNVs")
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse",
         report.results.dnaFusions must be (nonEmpty) otherwise (
-          Info("Fehlende Befunde") at "DNA-Fusionen"
+          MissingResult("DNA-Fusionen",Severity.Info)
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse",
         report.results.rnaFusions must be (nonEmpty) otherwise (
-          Info("Fehlende Befunde") at "RNA-Fusionen"
+          MissingResult("RNA-Fusionen",Severity.Info)
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse"
@@ -548,13 +542,13 @@ trait MTBValidators extends Validators
       (
         validate(rec.patient) at "Patient",
         validate(rec.indication) at "Indikation",
-        rec.levelOfEvidence must be (defined) otherwise (Warning("Fehlende Angabe")) at "Evidenz-Level",
-        rec.medication must be (nonEmpty) otherwise (Error("Fehlende Angabe")) at "Medikation",
+        rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
+        rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
         rec.supportingEvidence.getOrElse(List.empty) must be (nonEmpty) otherwise (
-          Warning("Fehlende Angabe")
+          MissingValue("Stützende molekulare Alteration(en)")
         ) andThen (
-          validateEach(_)
-        ) at "Stützende molekulare Alteration(en)",
+          validateEach(_) at "Stützende molekulare Alteration(en)"
+        ),
       )
       .errorsOr(rec) on rec
 
@@ -604,7 +598,7 @@ trait MTBValidators extends Validators
       (
         validate(response.patient) at "Patient",
         validate(response.claim) at Path.Node[Claim].name,
-        response.statusReason must be (defined) otherwise (Warning(s"Fehlende Angabe")) at "Status-Grund"
+        response.statusReason must be (defined) otherwise (MissingValue("Status-Grund"))
       )
       .errorsOr(response) on response
 
