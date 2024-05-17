@@ -67,7 +67,7 @@ trait Invalidators
     )
 
 
-  def invalidate(ngs: NGSReport): NGSReport = {
+  def invalidate(ngs: SomaticNGSReport): SomaticNGSReport = {
 
     def invalidate(snv: SNV): SNV =
       snv.copy(

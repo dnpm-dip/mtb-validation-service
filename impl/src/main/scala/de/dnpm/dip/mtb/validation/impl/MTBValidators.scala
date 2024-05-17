@@ -89,7 +89,7 @@ trait MTBValidators extends Validators
   implicit val histologyReportNode: Path.Node[HistologyReport] =
     Path.Node("Histologie-Bericht")
 
-  implicit val ngsReportNode: Path.Node[NGSReport] =
+  implicit val ngsReportNode: Path.Node[SomaticNGSReport] =
     Path.Node("NGS-Bericht")
 
   implicit val tmbNode: Path.Node[TMB] =
@@ -480,7 +480,7 @@ trait MTBValidators extends Validators
     implicit
     patient: Patient,
     specimens: Iterable[TumorSpecimen],
-  ): Validator[Issue,NGSReport] = {
+  ): Validator[Issue,SomaticNGSReport] = {
     report =>
       implicit val tumorCellContentValidator =
         TumorCellContentValidator(Bioinformatic)
