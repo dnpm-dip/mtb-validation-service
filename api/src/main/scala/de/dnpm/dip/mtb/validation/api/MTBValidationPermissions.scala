@@ -21,7 +21,7 @@ class MTBValidationPermissionsSPI extends PermissionsSPI
 
 
 
-object MTBValidationRoles extends ValidationRoles("MTB",MTBValidationPermissions)
+object MTBValidationRoles extends ValidationRoles(MTBValidationPermissions)
 
 class MTBValidationRolesSPI extends RolesSPI
 {
