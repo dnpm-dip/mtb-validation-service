@@ -44,8 +44,6 @@ trait Invalidators
     therapy.copy(
       patient = Reference.from(Id[Patient]("123")),
       therapyLine = None,
-//      statusReason = None,
-//      period = None,
       statusReason = Some(Coding(Progression)),
       period = therapy.period.map(p => ClosedPeriod(p.start,p.start.minusWeeks(2))),
       recordedOn = therapy.period.map(_.start).get.minusWeeks(2)

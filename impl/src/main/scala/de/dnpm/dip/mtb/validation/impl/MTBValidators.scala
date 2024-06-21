@@ -171,7 +171,7 @@ trait MTBValidators extends Validators
       .getOrElse(
         // 1. Censoring time strategy: fall back to date of last therapy follow-up
         therapies
-          .flatMap(_.history.map(_.recordedOn))
+          .flatMap(_.history.toList.map(_.recordedOn))
           .maxOption
           // 2. Censoring time strategy: fall back to upload date, i.e. now
           .getOrElse(LocalDate.now)
@@ -541,10 +541,10 @@ trait MTBValidators extends Validators
     rec =>
       (
         validate(rec.patient) at "Patient",
-        validate(rec.indication) at "Indikation",
+        validateOpt(rec.indication) at "Indikation",
         rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
         rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
-        rec.supportingEvidence.getOrElse(List.empty) must be (nonEmpty) otherwise (
+        rec.supportingVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
           MissingValue("Stützende molekulare Alteration(en)")
         ) andThen (
           validateEach(_) at "Stützende molekulare Alteration(en)"
@@ -562,7 +562,7 @@ trait MTBValidators extends Validators
     carePlan =>
       (
         validate(carePlan.patient) at "Patient",
-        validate(carePlan.indication) at "Indikation",
+        validateOpt(carePlan.indication) at "Indikation",
         (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.statusReason) must be (defined) otherwise (
           Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Status-Grund '${DisplayLabel.of(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
             at "Status-Grund"
@@ -697,7 +697,7 @@ trait MTBValidators extends Validators
         ),
         record.getMedicationTherapies must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "MTB-Therapien"
-        ) map (_.flatMap(_.history)) andThen {
+        ) map (_.flatMap(_.history.toList)) andThen {
           implicit val v = MTBTherapyValidator
           validateEach(_)
         }
