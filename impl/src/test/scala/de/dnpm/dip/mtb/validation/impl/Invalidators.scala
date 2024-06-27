@@ -46,7 +46,7 @@ trait Invalidators
       therapyLine = None,
       statusReason = Some(Coding(Progression)),
       period = therapy.period.map(p => ClosedPeriod(p.start,p.start.minusWeeks(2))),
-      recordedOn = therapy.period.map(_.start).get.minusWeeks(2)
+//      recordedOn = therapy.period.map(_.start).get.minusWeeks(2)
     )
 
 
@@ -87,17 +87,17 @@ trait Invalidators
         invalidate(record.patient),
       diagnoses =
         Some(record.getDiagnoses.map(invalidate)),
-      guidelineMedicationTherapies =
-        Some(record.getGuidelineMedicationTherapies.map(invalidate)),
+      guidelineTherapies =
+        Some(record.getGuidelineTherapies.map(invalidate)),
       guidelineProcedures =  
         Some(record.getGuidelineProcedures.map(invalidate)),
       specimens =  
         Some(record.getSpecimens.map(invalidate)),
       ngsReports =
         Some(record.getNgsReports.map(invalidate)),
-      medicationTherapies =
+      therapies =
         Some(
-          record.getMedicationTherapies.map(
+          record.getTherapies.map(
             th => th.copy(history = th.history.map(invalidate))
           )
         ),

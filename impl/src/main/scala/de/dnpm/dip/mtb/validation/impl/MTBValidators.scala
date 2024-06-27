@@ -630,7 +630,7 @@ trait MTBValidators extends Validators
         record.getClaimResponses
 
       implicit val therapyHistories =
-        record.getMedicationTherapies
+        record.getTherapies
 
       implicit val lastResponsesByTherapy =
         record
@@ -648,7 +648,7 @@ trait MTBValidators extends Validators
         ) andThen (
           validateEach(_)
         ),        
-        record.getGuidelineMedicationTherapies must be (nonEmpty) otherwise (
+        record.getGuidelineTherapies must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "Leitlinien-Therapien"
         ) andThen {
           implicit val v = GuidelineTherapyValidator
@@ -695,7 +695,7 @@ trait MTBValidators extends Validators
         ) andThen (
           validateEach(_)
         ),
-        record.getMedicationTherapies must be (nonEmpty) otherwise (
+        record.getTherapies must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "MTB-Therapien"
         ) map (_.flatMap(_.history.toList)) andThen {
           implicit val v = MTBTherapyValidator
