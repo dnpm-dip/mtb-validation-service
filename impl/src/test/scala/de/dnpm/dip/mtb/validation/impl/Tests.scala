@@ -13,8 +13,10 @@ import cats.{
 import de.ekut.tbi.generators.Gen
 import de.dnpm.dip.mtb.model.MTBPatientRecord
 import de.dnpm.dip.mtb.validation.api.MTBValidationService
-import de.dnpm.dip.service.Data._
-import de.dnpm.dip.service.validation.ValidationService.Validate
+import de.dnpm.dip.service.validation.ValidationService.{
+  Validate,
+  FatalIssuesDetected
+}
 import de.dnpm.dip.mtb.gens.Generators._
 import play.api.libs.json.Json.{ 
   toJson,
