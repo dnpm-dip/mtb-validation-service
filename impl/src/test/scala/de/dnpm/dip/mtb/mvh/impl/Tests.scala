@@ -1,7 +1,6 @@
 package de.dnpm.dip.mtb.mvh.impl
 
 
-import java.nio.file.Files.createTempDirectory
 import org.scalatest.flatspec.AnyFlatSpec
 import de.dnpm.dip.mtb.mvh.api.MTBMVHService
 

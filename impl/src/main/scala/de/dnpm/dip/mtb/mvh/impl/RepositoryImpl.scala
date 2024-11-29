@@ -30,7 +30,7 @@ object RepositoryImpl extends SPILoader[RepositoryImplProvider]
   override def getInstance =
     super.getInstance // Load implementation from runtime context (e.g. test implementation)...
       .recover {      // ... else default to file system-backed repo
-        case t =>
+        case _ =>
           Option(System.getProperty(dataDirProp)) match {
             case Some(dir) =>
               val dataDir = new File(s"$dir/mtb_data/mvh")

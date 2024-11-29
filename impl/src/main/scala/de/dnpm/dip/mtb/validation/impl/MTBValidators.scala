@@ -3,14 +3,9 @@ package de.dnpm.dip.mtb.validation.impl
 
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit.WEEKS
-import scala.util.chaining._
 import cats.Applicative
-import cats.data.Ior
 import cats.syntax.validated._
-import de.ekut.tbi.validation.{
-  Validator,
-  NegatableValidator
-}
+import de.ekut.tbi.validation.Validator
 import de.ekut.tbi.validation.dsl._
 import de.dnpm.dip.util.DisplayLabel
 import de.dnpm.dip.util.Displays
@@ -24,13 +19,11 @@ import de.dnpm.dip.coding.atc.ATC
 import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
-import de.dnpm.dip.coding.hgvs.HGVS
 import de.dnpm.dip.model.{
   History,
   Id,
   ClosedInterval,
   Patient,
-  Reference,
   Therapy,
   TherapyRecommendation
 }
@@ -41,7 +34,6 @@ import Therapy.Status.{
 }
 import de.dnpm.dip.model.Therapy.StatusReason.Progression
 import de.dnpm.dip.service.validation.{
-  HasId,
   Issue,
   Validators
 }
@@ -52,13 +44,11 @@ import TumorCellContent.Method.{
 }
 import Issue.{
   Error,
-  Info,
   Path,
   Severity,
   Warning
 }
 import Path.root
-import Path.syntax._
 
 
 trait MTBValidators extends Validators

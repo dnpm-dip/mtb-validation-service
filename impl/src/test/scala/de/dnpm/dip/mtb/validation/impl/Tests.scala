@@ -5,11 +5,6 @@ import scala.util.Random
 import scala.util.chaining._
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.must.Matchers._
-import org.scalatest.Inspectors._
-import cats.{
-  Applicative,
-  Id
-}
 import de.ekut.tbi.generators.Gen
 import de.dnpm.dip.mtb.model.MTBPatientRecord
 import de.dnpm.dip.mtb.validation.api.MTBValidationService

@@ -2,12 +2,8 @@ package de.dnpm.dip.mtb.validation.impl
 
 
 
-import de.dnpm.dip.coding.{
-  Code,
-  Coding
-}
+import de.dnpm.dip.coding.Coding
 import de.dnpm.dip.coding.hgvs.HGVS
-import de.dnpm.dip.coding.atc.ATC
 import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.model.{
