@@ -32,12 +32,12 @@ import Therapy.Status.{
   Completed,
   Stopped
 }
-import de.dnpm.dip.model.Therapy.StatusReason.Progression
 import de.dnpm.dip.service.validation.{
   Issue,
   Validators
 }
 import de.dnpm.dip.mtb.model._
+import MTBTherapy.StatusReason.Progression
 import TumorCellContent.Method.{
   Bioinformatic,
   Histologic
@@ -60,8 +60,8 @@ trait MTBValidators extends Validators
     Displays[E#Value](e => cs.conceptWithCode(e.toString).get.display)
 
 
-  private implicit val whoGradingCsp: CodeSystemProvider[WHOGrading,cats.Id,Applicative[cats.Id]] =
-    new WHOGrading.Provider.Facade[cats.Id]
+//  private implicit val whoGradingCsp: CodeSystemProvider[WHOGrading,cats.Id,Applicative[cats.Id]] =
+//    new WHOGrading.Provider.Facade[cats.Id]
 
 
   implicit val performanceStatusNode: Path.Node[PerformanceStatus] =
@@ -156,7 +156,7 @@ trait MTBValidators extends Validators
     patient: Patient
   )(
     implicit
-    therapies: Seq[History[MTBMedicationTherapy]]
+    therapies: Seq[History[MTBSystemicTherapy]]
   ): LocalDate =
     patient
       .dateOfDeath
@@ -176,10 +176,10 @@ trait MTBValidators extends Validators
     )
 
   private def dateOfProgressionOrCensoring(
-    therapy: MTBMedicationTherapy,
+    therapy: MTBSystemicTherapy,
     patient: Patient
   )(
-    implicit lastResponses: Map[Id[MTBMedicationTherapy],Response]
+    implicit lastResponses: Map[Id[MTBSystemicTherapy],Response]
   ): LocalDate =
     lastResponses
       .get(therapy.id)
@@ -192,7 +192,7 @@ trait MTBValidators extends Validators
         therapy
           .statusReason
           .collect {
-            case Therapy.StatusReason(Progression) =>
+            case MTBTherapy.StatusReason(Progression) =>
               therapy.period
                 .flatMap(_.endOption)
                 .getOrElse(therapy.recordedOn)
@@ -204,33 +204,37 @@ trait MTBValidators extends Validators
       .getOrElse(therapy.recordedOn)
 
 
+  implicit val tumorStagingValidator: Validator[Issue,TumorStaging] =
+    staging =>
+      (staging.tnmClassification must be (defined)) orElse (staging.otherClassifications must be (defined)) otherwise (
+        Error("Entweder TNM- oder sonstige Klassifizierungen müssen definiert sein") at "Klassifikationen"
+      ) map (_ => staging)
+
+
   implicit def diagnosisValidator(
     implicit
     patient: Patient,
-    therapies: Seq[History[MTBMedicationTherapy]]
+    therapies: Seq[History[MTBSystemicTherapy]]
   ): Validator[Issue,MTBDiagnosis] =
     diagnosis =>
       (
         validate(diagnosis.patient) at "Patient",
         validate(diagnosis.code) at "Code",
-        diagnosis.topography must be (defined) otherwise (
-          MissingOptValue("Topographie")
-        ) andThen (
-          validateOpt(_) at "Topographie"
+        validate(diagnosis.topography) at "Topographie",
+        diagnosis.grading must be (defined) otherwise (
+          MissingValue("Tumor-Grading")
         ),
-        validateOpt(diagnosis.whoGrading) at "WHO-Graduierung",
-        diagnosis.stageHistory must be (defined) otherwise (
-          MissingValue("Tumor-Ausbreitungsstadium")
+        diagnosis.staging must be (defined) otherwise (
+          MissingValue("Tumor-Staging")
+        ) andThen (
+          _.get.history.validateEach
         ),
         diagnosis.guidelineTreatmentStatus must be (defined) otherwise (
           MissingValue("Leitlinien-Behandlungsstatus")
         ),
-        ifDefined(diagnosis.recordedOn){
-          start =>
-            WEEKS.between(start,dateOfDeathOrCensoring(patient)) must be (positive) otherwise (
-              Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
-            ) map (_ => start)
-        }
+        WEEKS.between(diagnosis.recordedOn,dateOfDeathOrCensoring(patient)) must be (positive) otherwise (
+          Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
+        ) map (_ => diagnosis.recordedOn)
       )
       .errorsOr(diagnosis) on diagnosis
 
@@ -240,8 +244,8 @@ trait MTBValidators extends Validators
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
-  ): Validator[Issue,MTBMedicationTherapy] =
-    TherapyValidator[MTBMedicationTherapy] combineWith (
+  ): Validator[Issue,MTBSystemicTherapy] =
+    TherapyValidator[MTBSystemicTherapy] combineWith (
       therapy =>
         therapy.medication must be (defined) otherwise (
            MissingValue("Medikation")
@@ -257,9 +261,9 @@ trait MTBValidators extends Validators
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     recommendations: Iterable[MTBMedicationRecommendation],
-    lastResponsesByTherapy: Map[Id[MTBMedicationTherapy],Response]
-  ): Validator[Issue,MTBMedicationTherapy] =
-    TherapyValidator[MTBMedicationTherapy] combineWith (
+    lastResponsesByTherapy: Map[Id[MTBSystemicTherapy],Response]
+  ): Validator[Issue,MTBSystemicTherapy] =
+    TherapyValidator[MTBSystemicTherapy] combineWith (
       therapy =>
         (
           therapy.statusValue match {
@@ -374,18 +378,11 @@ trait MTBValidators extends Validators
       implicit val tumorCellContentValidator =
         TumorCellContentValidator(Histologic)
 
-      val tumorMorphology  = report.results.tumorMorphology
       val tumorCellContent = report.results.tumorCellContent
 
       (
         validate(report.patient) at "Patient",
         validate(report.specimen) at "Probe",
-        (tumorMorphology orElse tumorCellContent) must be (defined) otherwise (
-          Error("Keine Befunde vorhanden, weder Tumor-Morphologie noch -Zellgehalt") at "Ergebnisse"
-        ),
-        tumorMorphology must be (defined) otherwise (
-          MissingResult[TumorMorphology]
-        ) andThen (validateOpt(_)) on "Ergebnisse",
         tumorCellContent must be (defined) otherwise (
           MissingResult[TumorCellContent]
         ) andThen (
@@ -424,7 +421,7 @@ trait MTBValidators extends Validators
     snv =>
       (
         validate(snv.patient) at "Patient",
-        validateOpt(snv.gene) at "Gen",
+        validate(snv.gene) at "Gen",
         validateOpt(snv.proteinChange)
       )
       .errorsOr(snv) on snv
@@ -533,7 +530,7 @@ trait MTBValidators extends Validators
     rec =>
       (
         validate(rec.patient) at "Patient",
-        validateOpt(rec.indication) at "Indikation",
+        validateOpt(rec.reason) at "Indikation",
         rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
         rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
         rec.supportingVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
@@ -554,7 +551,7 @@ trait MTBValidators extends Validators
     carePlan =>
       (
         validate(carePlan.patient) at "Patient",
-        validateOpt(carePlan.indication) at "Indikation",
+        validateOpt(carePlan.reason) at "Indikation",
         (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.statusReason) must be (defined) otherwise (
           Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Status-Grund '${DisplayLabel.of(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
             at "Status-Grund"
@@ -574,7 +571,7 @@ trait MTBValidators extends Validators
       (
         validate(claim.patient) at "Patient",
         validate(claim.recommendation) at Path.Node[MTBMedicationRecommendation].name,
-        claim.id must be (in (claimResponses.flatMap(_.claim.id))) otherwise (
+        claim.id must be (in (claimResponses.map(_.claim.id))) otherwise (
           Warning(s"Keine zugehörige ${Path.Node[ClaimResponse].name} vorhanden") at root
         ) 
       )
@@ -596,14 +593,15 @@ trait MTBValidators extends Validators
 
 
 
-  val patientRecordValidator: Validator[Issue,MTBPatientRecord] = {
+  val patientRecordValidator: Validator[Issue,MTBPatientRecord] = 
+    PatientRecordValidator[MTBPatientRecord] combineWith {
     record =>
 
       implicit val patient =
         record.patient
 
       implicit val diagnoses = 
-        record.getDiagnoses
+        record.diagnoses.toList
 
       implicit val recommendations =
         record.getCarePlans
@@ -622,24 +620,18 @@ trait MTBValidators extends Validators
         record.getClaimResponses
 
       implicit val therapyHistories =
-        record.getTherapies
+        record.getSystemicTherapies
 
       implicit val lastResponsesByTherapy =
         record
          .getResponses
          .groupBy(_.therapy)
          .collect {
-           case (ref,responses) if ref.id.isDefined =>
-             ref.id.get -> responses.maxBy(_.effectiveDate)
+           case (ref,responses) => ref.id -> responses.maxBy(_.effectiveDate)
          }
 
       (
-        validate(record.patient),
-        diagnoses must be (nonEmpty) otherwise (
-          Error(s"Fehlende Angabe") at "Diagnosen"
-        ) andThen (
-          validateEach(_)
-        ),        
+        validateEach(diagnoses),
         record.getGuidelineTherapies must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "Leitlinien-Therapien"
         ) andThen {
@@ -687,7 +679,7 @@ trait MTBValidators extends Validators
         ) andThen (
           validateEach(_)
         ),
-        record.getTherapies must be (nonEmpty) otherwise (
+        record.getSystemicTherapies must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "MTB-Therapien"
         ) map (_.flatMap(_.history.toList)) andThen {
           implicit val v = MTBTherapyValidator
