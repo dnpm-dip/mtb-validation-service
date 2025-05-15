@@ -497,22 +497,22 @@ trait MTBValidators extends Validators
         ) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
-        report.results.simpleVariants must be (nonEmpty) otherwise (
+        report.results.simpleVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
           MissingResult("Einfache Varianten")
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse",
-        report.results.copyNumberVariants must be (nonEmpty) otherwise (
+        report.results.copyNumberVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
           MissingResult("CNVs")
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse",
-        report.results.dnaFusions must be (nonEmpty) otherwise (
+        report.results.dnaFusions.getOrElse(List.empty) must be (nonEmpty) otherwise (
           MissingResult("DNA-Fusionen",Severity.Info)
         ) andThen(
           validateEach(_)
         ) on "Ergebnisse",
-        report.results.rnaFusions must be (nonEmpty) otherwise (
+        report.results.rnaFusions.getOrElse(List.empty) must be (nonEmpty) otherwise (
           MissingResult("RNA-Fusionen",Severity.Info)
         ) andThen(
           validateEach(_)
@@ -552,11 +552,12 @@ trait MTBValidators extends Validators
       (
         validate(carePlan.patient) at "Patient",
         validateOpt(carePlan.reason) at "Indikation",
-        (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.statusReason) must be (defined) otherwise (
-          Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Status-Grund '${DisplayLabel.of(MTBCarePlan.StatusReason.NoTarget)}' aufgeführt sein")
-            at "Status-Grund"
+        (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.recommendationsMissingReason) must be (defined) otherwise (
+          Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein")
+            at "Status"
         ),
-        ifDefined(carePlan.medicationRecommendations)(validateEach(_))
+        ifDefined(carePlan.medicationRecommendations)(validateEach(_)),
+        ifDefined(carePlan.studyEnrollmentRecommendations)(validateEach(_))
       )
       .errorsOr(carePlan) on carePlan
 

@@ -70,7 +70,7 @@ trait Invalidators
 
     ngs.copy(
       results = ngs.results.copy(
-        simpleVariants = ngs.results.simpleVariants.map(invalidate)
+        simpleVariants = ngs.results.simpleVariants.map(_.map(invalidate))
       )
     )
 
