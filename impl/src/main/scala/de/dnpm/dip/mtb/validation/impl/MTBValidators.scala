@@ -255,7 +255,6 @@ trait MTBValidators extends Validators
       )
 
 
-
   def MTBTherapyValidator(
     implicit
     patient: Patient,
@@ -521,37 +520,34 @@ trait MTBValidators extends Validators
       .errorsOr(report) on report
   }
 
+
   implicit def medicationRecommendationValidator(
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     variants: Iterable[Variant],
   ): Validator[Issue,MTBMedicationRecommendation] =
-    rec =>
-      (
-        validate(rec.patient) at "Patient",
-        validateOpt(rec.reason) at "Indikation",
-        rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
-        rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
-        rec.supportingVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
-          MissingValue("Stützende molekulare Alteration(en)")
-        ) andThen (
-          validateEach(_) at "Stützende molekulare Alteration(en)"
-        ),
-      )
-      .errorsOr(rec) on rec
+    RecommendationValidator[MTBMedicationRecommendation] combineWith {
+      rec =>
+        (
+          validateOpt(rec.reason) at "Therapie-Grund (Diagnose)",
+          rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
+          rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
+        )
+        .errorsOr(rec) on rec
+    }
 
 
   implicit def carePlanValidator(
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
-    variants: Iterable[Variant],
+    variants: Iterable[Variant]
   ): Validator[Issue,MTBCarePlan] =
     carePlan =>
       (
         validate(carePlan.patient) at "Patient",
-        validateOpt(carePlan.reason) at "Indikation",
+        validateOpt(carePlan.reason) at "Therapie-Grund (Diagnose)",
         (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.recommendationsMissingReason) must be (defined) otherwise (
           Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein")
             at "Status"
@@ -593,7 +589,6 @@ trait MTBValidators extends Validators
       .errorsOr(response) on response
 
 
-
   val patientRecordValidator: Validator[Issue,MTBPatientRecord] = 
     PatientRecordValidator[MTBPatientRecord] combineWith {
     record =>
@@ -633,6 +628,13 @@ trait MTBValidators extends Validators
 
       (
         validateEach(diagnoses),
+        diagnoses.exists { 
+          d =>
+            val MTBDiagnosis.Type(t) = d.`type`.latestBy(_.date).value
+            t == MTBDiagnosis.Type.Main
+        } must be (true) otherwise (
+          Error(s"Keine Haupt-Diagnose definiert") at "Diagnoses"
+        ),
         record.getGuidelineTherapies must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "Leitlinien-Therapien"
         ) andThen {
