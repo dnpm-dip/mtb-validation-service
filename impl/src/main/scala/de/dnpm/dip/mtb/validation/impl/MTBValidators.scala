@@ -60,10 +60,6 @@ trait MTBValidators extends Validators
     Displays[E#Value](e => cs.conceptWithCode(e.toString).get.display)
 
 
-//  private implicit val whoGradingCsp: CodeSystemProvider[WHOGrading,cats.Id,Applicative[cats.Id]] =
-//    new WHOGrading.Provider.Facade[cats.Id]
-
-
   implicit val performanceStatusNode: Path.Node[PerformanceStatus] =
     Path.Node("Performance-Status")
 
@@ -81,6 +77,9 @@ trait MTBValidators extends Validators
 
   implicit val ngsReportNode: Path.Node[SomaticNGSReport] =
     Path.Node("NGS-Bericht")
+
+  implicit val misNode: Path.Node[MSI] =
+    Path.Node("MSI-Befund")
 
   implicit val tmbNode: Path.Node[TMB] =
     Path.Node("TMB-Befund")
@@ -392,6 +391,17 @@ trait MTBValidators extends Validators
   }
 
 
+  private implicit def msiValidator(
+    implicit
+    patient: Patient,
+    specimens: Iterable[TumorSpecimen]
+  ): Validator[Issue,MSI] =
+    ObservationValidator[MSI](MSI.Result.referenceRange) combineWith {
+      obs => 
+        (validate(obs.specimen) at "Probe").map(_ => obs)
+    }
+
+
   private implicit def tmbValidator(
     implicit
     patient: Patient
@@ -656,6 +666,7 @@ trait MTBValidators extends Validators
         ) andThen (
           validateEach(_)
         ),
+        ifDefined(record.msiFindings)(validateEach(_)),
         record.getHistologyReports must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "Histologie-Berichte"
         ) andThen (
