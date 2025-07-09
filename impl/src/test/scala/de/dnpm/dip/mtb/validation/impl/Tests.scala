@@ -7,6 +7,7 @@ import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.must.Matchers._
 import de.ekut.tbi.generators.Gen
 import de.dnpm.dip.mtb.model.MTBPatientRecord
+import de.dnpm.dip.service.DataUpload
 import de.dnpm.dip.mtb.validation.api.MTBValidationService
 import de.dnpm.dip.service.validation.ValidationService.{
   Validate,
@@ -44,10 +45,12 @@ class Tests extends AsyncFlatSpec with Invalidators
 
   "Validation of invalidated MTBPatientRecord" must "have failed" in {
 
-    (service ! Validate(record)).map {
+    (service ! Validate(DataUpload(record,None))).map {
+
       case Left(FatalIssuesDetected(report)) =>
         toJson(report) pipe prettyPrint pipe println
         succeed
+
       case _ => fail()
     }
 

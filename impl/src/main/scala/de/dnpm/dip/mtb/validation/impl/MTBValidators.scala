@@ -683,6 +683,16 @@ trait MTBValidators extends Validators
         ) andThen (
           validateEach(_)
         ),
+        ifDefined(record.followUps.filter(_.nonEmpty)){
+          followUps =>
+            (
+              record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
+                Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber nur ${record.getPerformanceStatus.size} ECOG-Werte vorhanden: Bei jedem FU muss der ECOG-Status erfasst worden sein.")
+                  at "ECOG-Status"
+              )
+            )
+            .map(_ => followUps)
+        },
         claims must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge"
         ) andThen (
