@@ -246,12 +246,14 @@ trait MTBValidators extends Validators
   ): Validator[Issue,MTBSystemicTherapy] =
     TherapyValidator[MTBSystemicTherapy] combineWith (
       therapy =>
-        therapy.medication must be (defined) otherwise (
-           MissingValue("Medikation")
-        ) map (_.get.toList) andThen (
-          validateEach(_) at "Medikation"
-        ) map (_ => therapy) on therapy
-      )
+        (
+          therapy.therapyLine must be (defined) otherwise (MissingValue("Therapie-Linie")),
+          therapy.medication must be (defined) otherwise (MissingValue("Medikation")) map (_.get.toList) andThen (
+            validateEach(_) at "Medikation"
+          )
+        )
+        .errorsOr(therapy) on therapy
+    )
 
 
   def MTBTherapyValidator(
@@ -288,9 +290,7 @@ trait MTBValidators extends Validators
               )
             case _ => None.validNel[Issue]
           },
-          therapy.statusReason must be (defined) otherwise (
-            MissingValue("Status-Grund")
-          ),
+          therapy.statusReason must be (defined) otherwise (MissingValue("Status-Grund")),
           ifDefined(therapy.period.map(_.start)){
             start =>
               WEEKS.between(start,dateOfProgressionOrCensoring(therapy,patient)) must be (positive) otherwise (
@@ -603,30 +603,21 @@ trait MTBValidators extends Validators
     PatientRecordValidator[MTBPatientRecord] combineWith {
     record =>
 
-      implicit val patient =
-        record.patient
+      implicit val patient = record.patient
 
-      implicit val diagnoses = 
-        record.diagnoses.toList
+      implicit val diagnoses = record.diagnoses.toList
 
-      implicit val recommendations =
-        record.getCarePlans
-          .flatMap(_.medicationRecommendations.getOrElse(List.empty))
+      implicit val recommendations = record.getCarePlans.flatMap(_.medicationRecommendations.getOrElse(List.empty))
 
-      implicit val specimens = 
-        record.getSpecimens
+      implicit val specimens = record.getSpecimens
 
-      implicit val variants = 
-        record.getNgsReports.flatMap(_.variants)
+      implicit val variants = record.getNgsReports.flatMap(_.variants)
 
-      implicit val claims =
-        record.getClaims
+      implicit val claims = record.getClaims
 
-      implicit val claimResponses =
-        record.getClaimResponses
+      implicit val claimResponses = record.getClaimResponses
 
-      implicit val therapyHistories =
-        record.getSystemicTherapies
+      implicit val therapyHistories = record.getSystemicTherapies
 
       implicit val lastResponsesByTherapy =
         record
@@ -689,9 +680,15 @@ trait MTBValidators extends Validators
               record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
                 Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber nur ${record.getPerformanceStatus.size} ECOG-Werte vorhanden: Bei jedem FU muss der ECOG-Status erfasst worden sein.")
                   at "ECOG-Status"
-              )
+              ),
+              if (recommendations.nonEmpty)
+                record.getSystemicTherapies must be (nonEmpty) otherwise (
+                  Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${recommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
+                    at "MTB-Therapien"
+                )
+              else Nil.validNel
             )
-            .map(_ => followUps)
+            .errorsOr(followUps)
         },
         claims must be (nonEmpty) otherwise (
           Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge"
