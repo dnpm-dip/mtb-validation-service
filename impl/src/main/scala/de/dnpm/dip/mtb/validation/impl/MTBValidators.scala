@@ -208,8 +208,8 @@ trait MTBValidators extends Validators
     // Source for values checked by RegEx: https://en.wikipedia.org/wiki/TNM_staging_system
     val modifier  = "[cpyraums]" 
     val modifierPattern = s"(?!.*($modifier).*\\1)[$modifier]{1,7}"  // negative lookahead to ensure distinct modifier occurrences only
-    val tPattern  = s"($modifierPattern)?(T[0-4x]|Tis)".r
-    val nPattern  = s"($modifierPattern)?(N[0-3x])".r
+    val tPattern  = s"($modifierPattern)?(T[0-4X]|Tis)".r
+    val nPattern  = s"($modifierPattern)?(N[0-3X])".r
     val mPattern  = s"($modifierPattern)?(M[0-1X])".r
 
     staging => 
