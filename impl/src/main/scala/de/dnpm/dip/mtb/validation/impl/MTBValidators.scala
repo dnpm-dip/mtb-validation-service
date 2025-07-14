@@ -203,12 +203,32 @@ trait MTBValidators extends Validators
       .getOrElse(therapy.recordedOn)
 
 
-  implicit val tumorStagingValidator: Validator[Issue,TumorStaging] =
-    staging =>
-      (staging.tnmClassification must be (defined)) orElse (staging.otherClassifications must be (defined)) otherwise (
-        Error("Entweder TNM- oder sonstige Klassifizierungen müssen definiert sein") at "Klassifikationen"
-      ) map (_ => staging)
+  implicit val tumorStagingValidator: Validator[Issue,TumorStaging] = {
 
+    // Source for values checked by RegEx: https://en.wikipedia.org/wiki/TNM_staging_system
+    val modifier  = "[cpyraums]" 
+    val modifierPattern = s"(?!.*($modifier).*\\1)[$modifier]{1,7}"  // negative lookahead to ensure distinct modifier occurrences only
+    val tPattern  = s"($modifierPattern)?(T[0-4x]|Tis)".r
+    val nPattern  = s"($modifierPattern)?(N[0-3x])".r
+    val mPattern  = s"($modifierPattern)?(M[0-1X])".r
+
+    staging => 
+      (
+        (staging.tnmClassification must be (defined)) orElse (staging.otherClassifications must be (defined)) otherwise (
+          Error("Entweder TNM- oder sonstige Klassifizierungen müssen definiert sein") at "Klassifikationen"
+        ),
+        ifDefined(staging.tnmClassification){
+          case tnm @ TumorStaging.TNM(t,n,m) =>
+            (
+              t.code.value must matchRegex (tPattern) otherwise (Error(s"Ungültiger Code '${t.code.value}'") at "T-Code"), 
+              n.code.value must matchRegex (nPattern) otherwise (Error(s"Ungültiger Code '${n.code.value}'") at "N-Code"), 
+              m.code.value must matchRegex (mPattern) otherwise (Error(s"Ungültiger Code '${m.code.value}'") at "M-Code") 
+            )
+            .errorsOr(tnm) on "TNM-Klassifikation"
+        }
+      )
+      .errorsOr(staging) on "Tumor-Staging" 
+  }
 
   implicit def diagnosisValidator(
     implicit

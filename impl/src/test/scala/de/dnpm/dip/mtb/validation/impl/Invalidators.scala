@@ -33,7 +33,7 @@ trait Invalidators
       patient = Reference(Id[Patient]("123")),
       code = Coding[ICD10GM]("wrong"),
       topography = Coding[ICDO3.T]("wrong"),
-      guidelineTreatmentStatus = None,
+      guidelineTreatmentStatus = None
     )
 
 
