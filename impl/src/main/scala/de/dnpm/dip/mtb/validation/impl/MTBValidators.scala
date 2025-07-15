@@ -20,12 +20,11 @@ import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
 import de.dnpm.dip.model.{
+  ClosedInterval,
   History,
   Id,
-  ClosedInterval,
   Patient,
-  Therapy,
-  TherapyRecommendation
+  Therapy
 }
 import Therapy.Status.{
   Ongoing,
@@ -326,7 +325,7 @@ trait MTBValidators extends Validators
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
-    recommendations: Iterable[TherapyRecommendation],
+    recommendations: Iterable[MTBProcedureRecommendation],
   ): Validator[Issue,OncoProcedure] =
     TherapyValidator[OncoProcedure]
 
@@ -578,10 +577,12 @@ trait MTBValidators extends Validators
       (
         validate(carePlan.patient) at "Patient",
         validateOpt(carePlan.reason) at "Therapie-Grund (Diagnose)",
+/*        
         (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.recommendationsMissingReason) must be (defined) otherwise (
           Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein")
             at "Status"
         ),
+*/      
         ifDefined(carePlan.medicationRecommendations)(validateEach(_)),
         ifDefined(carePlan.studyEnrollmentRecommendations)(validateEach(_))
       )
@@ -627,7 +628,11 @@ trait MTBValidators extends Validators
 
       implicit val diagnoses = record.diagnoses.toList
 
-      implicit val recommendations = record.getCarePlans.flatMap(_.medicationRecommendations.getOrElse(List.empty))
+      implicit val medicationRecommendations =
+        record.getCarePlans.flatMap(_.medicationRecommendations.getOrElse(List.empty))
+
+      implicit val procedureRecommendations =
+        record.getCarePlans.flatMap(_.procedureRecommendations.getOrElse(List.empty))
 
       implicit val specimens = record.getSpecimens
 
@@ -653,46 +658,37 @@ trait MTBValidators extends Validators
           d =>
             val MTBDiagnosis.Type(t) = d.`type`.latestBy(_.date).value
             t == MTBDiagnosis.Type.Main
-        } must be (true) otherwise (
-          Error(s"Keine Haupt-Diagnose definiert") at "Diagnoses"
-        ),
-        record.getGuidelineTherapies must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Leitlinien-Therapien"
-        ) andThen {
+        } must be (true) otherwise (Error(s"Keine Haupt-Diagnose definiert") at "Diagnoses"),
+        record.getGuidelineTherapies must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Leitlinien-Therapien") andThen {
           implicit val v = GuidelineTherapyValidator
           validateEach(_)
         },
-        record.getGuidelineProcedures must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Leitlinien-Prozeduren"
-        ) andThen (
+        record.getGuidelineProcedures must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Leitlinien-Prozeduren") andThen (
           validateEach(_)
         ),
-        record.getPerformanceStatus must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Performance-Status"
-        ) andThen (
+        record.getPerformanceStatus must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Performance-Status") andThen (
           validateEach(_)
         ),
-        specimens must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Tumor-Proben"
-        ) andThen (
+        specimens must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Tumor-Proben") andThen (
           validateEach(_)
         ),
         ifDefined(record.msiFindings)(validateEach(_)),
-        record.getHistologyReports must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Histologie-Berichte"
-        ) andThen (
+        record.getHistologyReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Histologie-Berichte") andThen (
           validateEach(_)
         ),
         //TODO: IHC-Reports
-        record.getNgsReports must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "NGS-Berichte"
-        ) andThen (
+        record.getNgsReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "NGS-Berichte") andThen (
           validateEach(_)
         ),
-        record.getCarePlans must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "MTB-Beschlüsse"
-        ) andThen (
+        record.getCarePlans must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Beschlüsse") andThen (
           validateEach(_)
+        ) andThen (
+          // Skip the first, potentially MVH-initiating board decision protocol from fine-grained check that either recommendations or 'no target' be defined
+          _.sortBy(_.issuedOn).tail validateEach (
+            cp => (cp.medicationRecommendations.filter(_.nonEmpty) orElse cp.recommendationsMissingReason) must be (defined) otherwise (
+              Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein") at "Status"
+            ) map (_ => cp) on cp
+          )
         ),
         ifDefined(record.followUps.filter(_.nonEmpty)){
           followUps =>
@@ -701,28 +697,22 @@ trait MTBValidators extends Validators
                 Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber nur ${record.getPerformanceStatus.size} ECOG-Werte vorhanden: Bei jedem FU muss der ECOG-Status erfasst worden sein.")
                   at "ECOG-Status"
               ),
-              if (recommendations.nonEmpty)
+              if (medicationRecommendations.nonEmpty)
                 record.getSystemicTherapies must be (nonEmpty) otherwise (
-                  Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${recommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
+                  Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${medicationRecommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
                     at "MTB-Therapien"
                 )
               else Nil.validNel
             )
             .errorsOr(followUps)
         },
-        claims must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge"
-        ) andThen (
+        claims must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge") andThen (
           validateEach(_)
         ),
-        claimResponses must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "Kostenübernahme-Antworten"
-        ) andThen (
+        claimResponses must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Antworten") andThen (
           validateEach(_)
         ),
-        record.getSystemicTherapies must be (nonEmpty) otherwise (
-          Warning(s"Fehlende Angabe") at "MTB-Therapien"
-        ) map (_.flatMap(_.history.toList)) andThen {
+        record.getSystemicTherapies must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Therapien") map (_.flatMap(_.history.toList)) andThen {
           implicit val v = MTBTherapyValidator
           validateEach(_)
         }
