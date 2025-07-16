@@ -20,7 +20,6 @@ import play.api.libs.json.Json.{
 }
 
 
-
 class Tests extends AsyncFlatSpec with Invalidators
 {
 

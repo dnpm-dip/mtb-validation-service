@@ -204,12 +204,13 @@ trait MTBValidators extends Validators
 
   implicit val tumorStagingValidator: Validator[Issue,TumorStaging] = {
 
-    // Source for values checked by RegEx: https://en.wikipedia.org/wiki/TNM_staging_system
-    val modifier  = "[cpyraums]" 
-    val modifierPattern = s"(?!.*($modifier).*\\1)[$modifier]{1,7}"  // negative lookahead to ensure distinct modifier occurrences only
-    val tPattern  = s"($modifierPattern)?(T[0-4X]|Tis)".r
-    val nPattern  = s"($modifierPattern)?(N[0-3X])".r
-    val mPattern  = s"($modifierPattern)?(M[0-1X])".r
+    // Source for regex derivation: https://claritynlp.readthedocs.io/en/latest/developer_guide/algorithms/tnm_stage_finder.html
+
+    val prefix        = "(c|p|yc|yp|r|rp|a)"
+    val subsite       = "[a-d]"
+    val tGroupPattern = s"($prefix)?(T[0-4X]|Tis)($subsite(\\((m|\\d)\\))?)?(\\+)?".r
+    val nGroupPattern = s"($prefix)?(N[0-3X])($subsite|\\(mi\\))?(\\(\\d/\\d\\))?(\\(i[\\+-]?\\)|\\(mol[\\+-]?\\))?(\\(sn\\))?".r
+    val mGroupPattern = s"(M[01X]|pM[01X])($subsite)?(\\(cy\\+\\))?(\\(i\\+?\\)|\\(mol\\+?\\))?".r
 
     staging => 
       (
@@ -219,11 +220,11 @@ trait MTBValidators extends Validators
         ifDefined(staging.tnmClassification){
           case tnm @ TumorStaging.TNM(t,n,m) =>
             (
-              t.code.value must matchRegex (tPattern) otherwise (Error(s"Ungültiger Code '${t.code.value}'") at "T-Code"), 
-              n.code.value must matchRegex (nPattern) otherwise (Error(s"Ungültiger Code '${n.code.value}'") at "N-Code"), 
-              m.code.value must matchRegex (mPattern) otherwise (Error(s"Ungültiger Code '${m.code.value}'") at "M-Code") 
+              t.code.value must matchRegex (tGroupPattern) otherwise (Error(s"Ungültiger Code '${t.code.value}'") at "T-Code"), 
+              n.code.value must matchRegex (nGroupPattern) otherwise (Error(s"Ungültiger Code '${n.code.value}'") at "N-Code"), 
+              m.code.value must matchRegex (mGroupPattern) otherwise (Error(s"Ungültiger Code '${m.code.value}'") at "M-Code") 
             )
-            .errorsOr(tnm) on "TNM-Klassifikation"
+            .errorsOr(tnm) on "TNM"
         }
       )
       .errorsOr(staging) on "Tumor-Staging" 
@@ -628,11 +629,9 @@ trait MTBValidators extends Validators
 
       implicit val diagnoses = record.diagnoses.toList
 
-      implicit val medicationRecommendations =
-        record.getCarePlans.flatMap(_.medicationRecommendations.getOrElse(List.empty))
+      implicit val medicationRecommendations = record.getCarePlans.flatMap(_.medicationRecommendations.getOrElse(List.empty))
 
-      implicit val procedureRecommendations =
-        record.getCarePlans.flatMap(_.procedureRecommendations.getOrElse(List.empty))
+      implicit val procedureRecommendations = record.getCarePlans.flatMap(_.procedureRecommendations.getOrElse(List.empty))
 
       implicit val specimens = record.getSpecimens
 
