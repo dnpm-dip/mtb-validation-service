@@ -27,6 +27,7 @@ import de.dnpm.dip.model.{
   Therapy
 }
 import Therapy.Status.{
+  NotDone,
   Ongoing,
   Completed,
   Stopped
@@ -293,24 +294,21 @@ trait MTBValidators extends Validators
               ) andThen (
                 validateEach(_)
               ) at "Medikation"
-            case _ => None.validNel[Issue]
+            case _ => None.validNel
           },
           therapy.statusValue match {
             case Ongoing =>
-              therapy.period must be (defined) otherwise (
-                Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum"
-              )
+              therapy.period must be (defined) otherwise (Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum")
             case Completed | Stopped =>
-              therapy.period must be (defined) otherwise (
-                Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum"
-              ) andThen (
-                _.get.endOption must be (defined) otherwise (
-                  Error("Fehlende Angabe bei abgeschlossener Therapie") at "End-Datum"
-                ) on "Zeitraum"
+              therapy.period must be (defined) otherwise (Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum") andThen (
+                _.get.endOption must be (defined) otherwise (Error("Fehlende Angabe bei abgeschlossener Therapie") at "End-Datum") on "Zeitraum"
               )
             case _ => None.validNel[Issue]
           },
-          therapy.statusReason must be (defined) otherwise (MissingValue("Status-Grund")),
+          therapy.statusValue match {
+            case NotDone | Stopped => therapy.statusReason must be (defined) otherwise (MissingValue("Status-Grund"))
+            case _                 => None.validNel
+          },
           ifDefined(therapy.period.map(_.start)){
             start =>
               WEEKS.between(start,dateOfProgressionOrCensoring(therapy,patient)) must be (positive) otherwise (
@@ -611,15 +609,22 @@ trait MTBValidators extends Validators
     implicit
     patient: Patient,
     claims: Iterable[Claim]
-  ): Validator[Issue,ClaimResponse] =
+  ): Validator[Issue,ClaimResponse] = {
+    import ClaimResponse.Status.Rejected
+
     response =>
       (
         validate(response.patient) at "Patient",
         validate(response.claim) at Path.Node[Claim].name,
-        response.statusReason must be (defined) otherwise (MissingValue("Status-Grund"))
+        response.status must be (defined) otherwise (MissingValue("Status")) andThen {
+          case Some(ClaimResponse.Status(Rejected)) =>
+            response.statusReason must be (defined) otherwise (Warning("Fehlender Grund bei angelehnter Kostenübernahme") at "Status-Grund")
+            
+          case _ => None.validNel
+        }
       )
       .errorsOr(response) on response
-
+  }
 
   val patientRecordValidator: Validator[Issue,MTBPatientRecord] = 
     PatientRecordValidator[MTBPatientRecord] combineWith {
