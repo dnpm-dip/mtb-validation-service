@@ -55,4 +55,17 @@ class Tests extends AsyncFlatSpec with Invalidators
 
   }
 
+
+  "TNM code validations" must "have behaved correctly" in { 
+
+    val tCodes = List("T1(m)","T1(3)")
+    val nCodes = List("N1b","pN1(mi)","pN0(i-)")
+    val mCodes = List("pM1")
+
+    all (tCodes) must fullyMatch regex TNM.tGroupPattern
+    all (nCodes) must fullyMatch regex TNM.nGroupPattern
+    all (mCodes) must fullyMatch regex TNM.mGroupPattern
+
+  }
+
 }

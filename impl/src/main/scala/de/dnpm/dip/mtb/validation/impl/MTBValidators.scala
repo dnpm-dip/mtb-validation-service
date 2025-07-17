@@ -203,16 +203,7 @@ trait MTBValidators extends Validators
       .getOrElse(therapy.recordedOn)
 
 
-  implicit val tumorStagingValidator: Validator[Issue,TumorStaging] = {
-
-    // Source for regex derivation: https://claritynlp.readthedocs.io/en/latest/developer_guide/algorithms/tnm_stage_finder.html
-
-    val prefix        = "(c|p|yc|yp|r|rp|a)"
-    val subsite       = "[a-d]"
-    val tGroupPattern = s"($prefix)?(T[0-4X]|Tis)($subsite(\\((m|\\d)\\))?)?(\\+)?".r
-    val nGroupPattern = s"($prefix)?(N[0-3X])($subsite|\\(mi\\))?(\\(\\d/\\d\\))?(\\(i[\\+-]?\\)|\\(mol[\\+-]?\\))?(\\(sn\\))?".r
-    val mGroupPattern = s"(M[01X]|pM[01X])($subsite)?(\\(cy\\+\\))?(\\(i\\+?\\)|\\(mol\\+?\\))?".r
-
+  implicit val tumorStagingValidator: Validator[Issue,TumorStaging] = 
     staging => 
       (
         (staging.tnmClassification must be (defined)) orElse (staging.otherClassifications must be (defined)) otherwise (
@@ -221,15 +212,15 @@ trait MTBValidators extends Validators
         ifDefined(staging.tnmClassification){
           case tnm @ TumorStaging.TNM(t,n,m) =>
             (
-              t.code.value must matchRegex (tGroupPattern) otherwise (Error(s"Ungültiger Code '${t.code.value}'") at "T-Code"), 
-              n.code.value must matchRegex (nGroupPattern) otherwise (Error(s"Ungültiger Code '${n.code.value}'") at "N-Code"), 
-              m.code.value must matchRegex (mGroupPattern) otherwise (Error(s"Ungültiger Code '${m.code.value}'") at "M-Code") 
+              t.code.value must matchRegex (TNM.tGroupPattern) otherwise (Error(s"Ungültiger Code '${t.code.value}'") at "T-Code"), 
+              n.code.value must matchRegex (TNM.nGroupPattern) otherwise (Error(s"Ungültiger Code '${n.code.value}'") at "N-Code"), 
+              m.code.value must matchRegex (TNM.mGroupPattern) otherwise (Error(s"Ungültiger Code '${m.code.value}'") at "M-Code") 
             )
             .errorsOr(tnm) on "TNM"
         }
       )
       .errorsOr(staging) on "Tumor-Staging" 
-  }
+  
 
   implicit def diagnosisValidator(
     implicit
