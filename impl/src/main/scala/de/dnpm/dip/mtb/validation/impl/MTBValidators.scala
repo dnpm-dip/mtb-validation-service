@@ -23,6 +23,7 @@ import de.dnpm.dip.model.{
   ClosedInterval,
   History,
   Id,
+  NGSReport,
   Patient,
   Therapy
 }
@@ -206,7 +207,7 @@ trait MTBValidators extends Validators
   implicit val tumorStagingValidator: Validator[Issue,TumorStaging] = 
     staging => 
       (
-        (staging.tnmClassification must be (defined)) orElse (staging.otherClassifications must be (defined)) otherwise (
+        (staging.tnmClassification orElse staging.otherClassifications.filter(_.nonEmpty)) must be (defined) otherwise (
           Error("Entweder TNM- oder sonstige Klassifizierungen müssen definiert sein") at "Klassifikationen"
         ),
         ifDefined(staging.tnmClassification){
@@ -225,27 +226,30 @@ trait MTBValidators extends Validators
   implicit def diagnosisValidator(
     implicit
     patient: Patient,
-    therapies: Seq[History[MTBSystemicTherapy]]
+    therapies: Seq[History[MTBSystemicTherapy]],
+    histology: Seq[HistologyReport]
   ): Validator[Issue,MTBDiagnosis] =
     diagnosis =>
       (
         validate(diagnosis.patient) at "Patient",
         validate(diagnosis.code) at "Code",
         validate(diagnosis.topography) at "Topographie",
-        diagnosis.grading must be (defined) otherwise (
-          MissingValue("Tumor-Grading")
-        ),
-        diagnosis.staging must be (defined) otherwise (
-          MissingValue("Tumor-Staging")
-        ) andThen (
-          _.get.history.validateEach
-        ),
-        diagnosis.guidelineTreatmentStatus must be (defined) otherwise (
-          MissingValue("Leitlinien-Behandlungsstatus")
-        ),
+        ifDefined(diagnosis.germlineCodes.map(_.toList))(validateEach(_) at "Keimbahndiagnose-Codes"),
+        diagnosis.grading must be (defined) otherwise (MissingValue("Tumor-Grading")),
+        diagnosis.staging must be (defined) otherwise (MissingValue("Tumor-Staging")) andThen (_.get.history.validateEach),
+        diagnosis.guidelineTreatmentStatus must be (defined) otherwise (MissingValue("Leitlinien-Behandlungsstatus")),
         WEEKS.between(diagnosis.recordedOn,dateOfDeathOrCensoring(patient)) must be (positive) otherwise (
           Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
-        ) map (_ => diagnosis.recordedOn)
+        ) map (_ => diagnosis.recordedOn),
+        diagnosis.`type`.latestBy(_.date).value match { 
+          case MTBDiagnosis.Type(MTBDiagnosis.Type.Main) =>
+            diagnosis.histology.filter(_.nonEmpty) must be (defined) otherwise (
+              Error("Fehlende Referenz auf Histologie-Bericht mit Morphologie-Befund zur Haupt-Diagnose")
+            ) map (_.get) andThen (
+              validateEach(_)
+            ) at "Histologie"
+          case _ => None.validNel
+        } 
       )
       .errorsOr(diagnosis) on diagnosis
 
@@ -294,7 +298,7 @@ trait MTBValidators extends Validators
               therapy.period must be (defined) otherwise (Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum") andThen (
                 _.get.endOption must be (defined) otherwise (Error("Fehlende Angabe bei abgeschlossener Therapie") at "End-Datum") on "Zeitraum"
               )
-            case _ => None.validNel[Issue]
+            case _ => None.validNel
           },
           therapy.statusValue match {
             case NotDone | Stopped => therapy.statusReason must be (defined) otherwise (MissingValue("Status-Grund"))
@@ -336,8 +340,11 @@ trait MTBValidators extends Validators
       (
         validate(specimen.patient) at "Patient",
         validate(specimen.diagnosis) at "Diagnose",
-        specimen.`type` must not (be (Coding(TumorSpecimen.Type.Unknown))) otherwise (
-          Warning(s"Fehlende bzw. Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'") at "Proben-Typ"
+//        specimen.`type` must not (be (Coding(TumorSpecimen.Type.Unknown))) otherwise (
+//          Warning(s"Fehlende bzw. Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'") at "Proben-Typ"
+//        ),
+        specimen.collection must be (defined) otherwise (MissingValue("Entnahme-Angaben")) map (_.get) andThen (
+          _.date must be (defined) otherwise (MissingValue("Entnahme-Datum"))
         )
       )
       .errorsOr(specimen) on specimen
@@ -390,9 +397,7 @@ trait MTBValidators extends Validators
       (
         validate(report.patient) at "Patient",
         validate(report.specimen) at "Probe",
-        tumorCellContent must be (defined) otherwise (
-          MissingResult[TumorCellContent]
-        ) andThen (
+        tumorCellContent must be (defined) otherwise (MissingResult[TumorCellContent]) andThen (
           validateOpt(_) 
         ) on "Ergebnisse"
       )
@@ -429,7 +434,15 @@ trait MTBValidators extends Validators
     implicit
     patient: Patient
   ): Validator[Issue,HRDScore] =
-    ObservationValidator[HRDScore](HRDScore.referenceRange)
+    ObservationValidator[HRDScore](HRDScore.referenceRange) combineWith { 
+      hrd => 
+        (
+          hrd.components.lst must be (in (HRDScore.lstRefererenceRange)) otherwise (Error(s"Ungültiger Wert, nicht in Referenz-Bereich ${HRDScore.lstRefererenceRange}") at "LST"),
+          hrd.components.loh must be (in (HRDScore.lohRefererenceRange)) otherwise (Error(s"Ungültiger Wert, nicht in Referenz-Bereich ${HRDScore.lohRefererenceRange}") at "LOH"),
+          hrd.components.tai must be (in (HRDScore.taiRefererenceRange)) otherwise (Error(s"Ungültiger Wert, nicht in Referenz-Bereich ${HRDScore.taiRefererenceRange}") at "TAI")
+        )
+        .errorsOr(hrd) on hrd
+    }
 
 
   private implicit def snvValidator(
@@ -483,6 +496,16 @@ trait MTBValidators extends Validators
   }
 
 
+  import NGSReport.Type._
+
+  private val ngsTypes =
+    Set(
+      Panel,
+      Exome,
+      GenomeShortRead,
+      GenomeLongRead
+    )
+
   implicit def ngsReportValidator(
     implicit
     patient: Patient,
@@ -495,44 +518,31 @@ trait MTBValidators extends Validators
       (
         validate(report.patient) at "Patient",
         validate(report.specimen) at "Probe",
-        report.results.tumorCellContent must be (defined) otherwise (
-          MissingResult[TumorCellContent]
-        ) andThen (
+        NGSReport.Type.withName(report.`type`.code.value) must be (in (ngsTypes)) otherwise (
+          Error(s"Wert ist nicht unter den erwarteten Werten {${ngsTypes.mkString(", ")}}") at "Befund-/Sequenzier-Typ"
+        ), 
+        report.results.tumorCellContent must be (defined) otherwise (MissingResult[TumorCellContent]) andThen (
           validateOpt(_)
         ) on "Ergebnisse",
-        report.results.tmb must be (defined) otherwise (
-          MissingResult[TMB]
-        ) map (_.get) andThen (
+        report.results.tmb must be (defined) otherwise (MissingResult[TMB]) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
-        report.results.brcaness must be (defined) otherwise (
-          MissingResult[BRCAness]
-        ) map (_.get) andThen (
+        report.results.brcaness must be (defined) otherwise (MissingResult[BRCAness]) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
-        report.results.hrdScore must be (defined) otherwise (
-          MissingResult[HRDScore]
-        ) map (_.get) andThen (
+        report.results.hrdScore must be (defined) otherwise (MissingResult[HRDScore]) map (_.get) andThen (
           validate(_)
         ) on "Ergebnisse",
-        report.results.simpleVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
-          MissingResult("Einfache Varianten")
-        ) andThen(
+        report.results.simpleVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (MissingResult("Einfache Varianten")) andThen(
           validateEach(_)
         ) on "Ergebnisse",
-        report.results.copyNumberVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (
-          MissingResult("CNVs")
-        ) andThen(
+        report.results.copyNumberVariants.getOrElse(List.empty) must be (nonEmpty) otherwise (MissingResult("CNVs")) andThen(
           validateEach(_)
         ) on "Ergebnisse",
-        report.results.dnaFusions.getOrElse(List.empty) must be (nonEmpty) otherwise (
-          MissingResult("DNA-Fusionen",Severity.Info)
-        ) andThen(
+        report.results.dnaFusions.getOrElse(List.empty) must be (nonEmpty) otherwise (MissingResult("DNA-Fusionen",Severity.Info)) andThen(
           validateEach(_)
         ) on "Ergebnisse",
-        report.results.rnaFusions.getOrElse(List.empty) must be (nonEmpty) otherwise (
-          MissingResult("RNA-Fusionen",Severity.Info)
-        ) andThen(
+        report.results.rnaFusions.getOrElse(List.empty) must be (nonEmpty) otherwise (MissingResult("RNA-Fusionen",Severity.Info)) andThen(
           validateEach(_)
         ) on "Ergebnisse"
       )
@@ -552,6 +562,9 @@ trait MTBValidators extends Validators
           validateOpt(rec.reason) at "Therapie-Grund (Diagnose)",
           rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
           rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
+          rec.useType must be (defined) otherwise (MissingValue("Empfehlungsart")),
+          rec.category must be (defined) otherwise (MissingValue("Art der Therapie")),
+
         )
         .errorsOr(rec) on rec
     }
@@ -567,12 +580,6 @@ trait MTBValidators extends Validators
       (
         validate(carePlan.patient) at "Patient",
         validateOpt(carePlan.reason) at "Therapie-Grund (Diagnose)",
-/*        
-        (carePlan.medicationRecommendations.filter(_.nonEmpty) orElse carePlan.recommendationsMissingReason) must be (defined) otherwise (
-          Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein")
-            at "Status"
-        ),
-*/      
         ifDefined(carePlan.medicationRecommendations)(validateEach(_)),
         ifDefined(carePlan.studyEnrollmentRecommendations)(validateEach(_))
       )
@@ -630,6 +637,8 @@ trait MTBValidators extends Validators
       implicit val procedureRecommendations = record.getCarePlans.flatMap(_.procedureRecommendations.getOrElse(List.empty))
 
       implicit val specimens = record.getSpecimens
+
+      implicit val histologyReports = record.getHistologyReports
 
       implicit val variants = record.getNgsReports.flatMap(_.variants)
 
