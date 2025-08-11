@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.0.0...v1.0.1) (2025-08-11)
+
+
+### Bug Fixes
+
+* Updated dependency version ([3ea76ab](https://github.com/dnpm-dip/mtb-validation-service/commit/3ea76ab6bb8977009364e9f46252de411adf654b))
+
 ## 1.0.0 (2025-08-06)
 
 
