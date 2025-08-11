@@ -68,7 +68,7 @@ lazy val dependencies =
   new {
     val scalatest      = "org.scalatest"  %% "scalatest"              % "3.2.17" % Test
     val mtb_model      = "de.dnpm.dip"    %% "mtb-dto-model"          % "1.0.0"
-    val service_base   = "de.dnpm.dip"    %% "service-base"           % "1.0.0"
+    val service_base   = "de.dnpm.dip"    %% "service-base"           % "1.0.1"
     val mtb_generators = "de.dnpm.dip"    %% "mtb-dto-generators"     % "1.0.0" % Test
     val icd10gm        = "de.dnpm.dip"    %% "icd10gm-impl"           % "1.0.0" % Test
     val icdo3          = "de.dnpm.dip"    %% "icdo3-impl"             % "1.0.0" % Test
@@ -129,9 +129,6 @@ lazy val compilerOptions = Seq(
   "-Wunused:privates",
   "-Wunused:implicits",
   "-Wvalue-discard",
-
-  // Deactivated to avoid many false positives from 'evidence' parameters in context bounds
-//  "-Wunused:params",
 )
 
 
