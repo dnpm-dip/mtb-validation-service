@@ -60,7 +60,7 @@ class Tests extends AsyncFlatSpec with Invalidators
 
     val tCodes = List("T1(m)","T1(3)")
     val nCodes = List("N1b","pN1(mi)","pN0(i-)")
-    val mCodes = List("pM1")
+    val mCodes = List("pM1","cM0")
 
     all (tCodes) must fullyMatch regex TNM.tGroupPattern
     all (nCodes) must fullyMatch regex TNM.nGroupPattern
