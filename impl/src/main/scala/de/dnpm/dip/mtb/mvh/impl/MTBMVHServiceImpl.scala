@@ -5,6 +5,8 @@ import scala.concurrent.Future
 import cats.Monad
 import de.dnpm.dip.service.mvh.{
   BaseMVHService,
+  BaseReport,
+  Report,
   Repository,
   UseCase
 }
@@ -40,4 +42,13 @@ extends BaseMVHService(
   repo
 )
 with MTBMVHService
+{
 
+  override def report(
+    criteria: Report.Criteria
+  )(
+    implicit env: Monad[Future]
+  ): Future[BaseReport] =  
+    env.map(baseReport(criteria))(_._1)
+
+}
