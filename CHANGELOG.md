@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.0.4...v1.1.0) (2025-10-10)
+
+
+### Features
+
+* Added implementation for (quarterly) MVH reporting ([e47c6b6](https://github.com/dnpm-dip/mtb-validation-service/commit/e47c6b6eaac900b3409f146f3450e616cdc4bd3e))
+
+
+### Bug Fixes
+
+* Corrected M-group regex for TNM ([047253b](https://github.com/dnpm-dip/mtb-validation-service/commit/047253b27e8972dddc97e6f9da61c2661f29ace8))
+
 ## [1.0.4](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.0.3...v1.0.4) (2025-09-08)
 
 
