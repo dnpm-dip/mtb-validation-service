@@ -6,7 +6,7 @@ import scala.util.Properties.envOrElse
 name := "mtb-validation-service"
 ThisBuild / organization := "de.dnpm.dip"
 ThisBuild / scalaVersion := "2.13.16"
-ThisBuild / version      := envOrElse("VERSION","1.1.0")
+ThisBuild / version      := envOrElse("VERSION","1.1.1")
 
 val ownerRepo  = envOrElse("REPOSITORY","dnpm-dip/mtb-validation-service").split("/")
 ThisBuild / githubOwner      := ownerRepo(0)
@@ -68,7 +68,7 @@ lazy val dependencies =
   new {
     val scalatest      = "org.scalatest"  %% "scalatest"              % "3.2.19" % Test
     val mtb_model      = "de.dnpm.dip"    %% "mtb-dto-model"          % "1.1.1"
-    val service_base   = "de.dnpm.dip"    %% "service-base"           % "1.1.0"
+    val service_base   = "de.dnpm.dip"    %% "service-base"           % "1.1.1"
     val mtb_generators = "de.dnpm.dip"    %% "mtb-dto-generators"     % "1.1.1" % Test
     val icd10gm        = "de.dnpm.dip"    %% "icd10gm-impl"           % "1.1.1" % Test
     val icdo3          = "de.dnpm.dip"    %% "icdo3-impl"             % "1.1.1" % Test
