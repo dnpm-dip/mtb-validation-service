@@ -241,15 +241,15 @@ trait MTBValidators extends Validators
         WEEKS.between(diagnosis.recordedOn,dateOfDeathOrCensoring(patient)) must be (positive) otherwise (
           Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
         ) map (_ => diagnosis.recordedOn),
-        diagnosis.`type`.latestBy(_.date).value match { 
-          case MTBDiagnosis.Type(MTBDiagnosis.Type.Main) =>
+        diagnosis.`type`.latestBy(_.date).value.code.enumValue match { 
+          case MTBDiagnosis.Type.Main =>
             diagnosis.histology.filter(_.nonEmpty) must be (defined) otherwise (
               Error("Fehlende Referenz auf Histologie-Bericht mit Morphologie-Befund zur Haupt-Diagnose")
             ) map (_.get) andThen (
               validateEach(_)
             ) at "Histologie"
           case _ => None.validNel
-        } 
+        }
       )
       .errorsOr(diagnosis) on diagnosis
 
@@ -279,10 +279,11 @@ trait MTBValidators extends Validators
     recommendations: Iterable[MTBMedicationRecommendation],
     lastResponsesByTherapy: Map[Id[MTBSystemicTherapy],Response]
   ): Validator[Issue,MTBSystemicTherapy] =
-    TherapyValidator[MTBSystemicTherapy] combineWith (
+    TherapyValidator[MTBSystemicTherapy] combineWith {
       therapy =>
+        val status = therapy.status.code.enumValue
         (
-          therapy.statusValue match {
+          status match {
             case Ongoing | Completed | Stopped  =>
               therapy.medication.getOrElse(Set.empty).toList must be (nonEmpty) otherwise (
                 Error("Fehlende Angabe bei begonnener Therapie")
@@ -291,7 +292,7 @@ trait MTBValidators extends Validators
               ) at "Medikation"
             case _ => None.validNel
           },
-          therapy.statusValue match {
+          status match {
             case Ongoing =>
               therapy.period must be (defined) otherwise (Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum")
             case Completed | Stopped =>
@@ -300,7 +301,7 @@ trait MTBValidators extends Validators
               )
             case _ => None.validNel
           },
-          therapy.statusValue match {
+          status match {
             case NotDone | Stopped => therapy.statusReason must be (defined) otherwise (MissingValue("Status-Grund"))
             case _                 => None.validNel
           },
@@ -312,7 +313,7 @@ trait MTBValidators extends Validators
           }
         )
         .errorsOr(therapy) on therapy
-      )
+    }
 
 
   implicit def OncoProcedureValidator(
@@ -340,9 +341,6 @@ trait MTBValidators extends Validators
       (
         validate(specimen.patient) at "Patient",
         validate(specimen.diagnosis) at "Diagnose",
-//        specimen.`type` must not (be (Coding(TumorSpecimen.Type.Unknown))) otherwise (
-//          Warning(s"Fehlende bzw. Unspezifische Angabe '${DisplayLabel.of(specimen.`type`.code).value}'") at "Proben-Typ"
-//        ),
         specimen.collection must be (defined) otherwise (MissingValue("Entnahme-Angaben")) map (_.get) andThen (
           _.date must be (defined) otherwise (MissingValue("Entnahme-Datum"))
         )
@@ -518,7 +516,7 @@ trait MTBValidators extends Validators
       (
         validate(report.patient) at "Patient",
         validate(report.specimen) at "Probe",
-        NGSReport.Type.withName(report.`type`.code.value) must be (in (ngsTypes)) otherwise (
+        report.`type`.code.enumValue must be (in (ngsTypes)) otherwise (
           Error(s"Wert ist nicht unter den erwarteten Werten {${ngsTypes.mkString(", ")}}") at "Befund-/Sequenzier-Typ"
         ), 
         report.results.tumorCellContent must be (defined) otherwise (MissingResult[TumorCellContent]) andThen (
