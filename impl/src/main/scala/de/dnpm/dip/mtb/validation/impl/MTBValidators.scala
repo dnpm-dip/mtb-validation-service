@@ -160,6 +160,7 @@ trait MTBValidators extends Validators
   ): LocalDate =
     patient
       .dateOfDeath
+      .map(_.atEndOfMonth)
       .getOrElse(
         // 1. Censoring time strategy: fall back to date of last therapy follow-up
         therapies
@@ -199,7 +200,7 @@ trait MTBValidators extends Validators
           }
       )
       // 3. Use patient date of death as "progression" date
-      .orElse(patient.dateOfDeath)
+      .orElse(patient.dateOfDeath.map(_.atEndOfMonth))
       // 4. Censoring: therapy recording date
       .getOrElse(therapy.recordedOn)
 

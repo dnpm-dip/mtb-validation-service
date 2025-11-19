@@ -1,6 +1,7 @@
 package de.dnpm.dip.mtb.mvh.impl
 
 
+import scala.util.chaining._
 import scala.concurrent.Future
 import cats.Monad
 import de.dnpm.dip.service.mvh.{
@@ -8,6 +9,7 @@ import de.dnpm.dip.service.mvh.{
   BaseReport,
   Report,
   Repository,
+  Submission,
   UseCase
 }
 import de.dnpm.dip.mtb.mvh.api.{
@@ -43,6 +45,35 @@ extends BaseMVHService(
 )
 with MTBMVHService
 {
+
+  import de.dnpm.dip.service.mvh.extensions._
+
+  override def sequenceTypes(
+    record: MTBPatientRecord
+  ): Option[Set[Submission.SequenceType.Value]] = {
+
+    val mvhBoardDate = record.mvhCarePlan.map(_.issuedOn)
+
+    record.ngsReports.map(
+      _.filter(report => mvhBoardDate.fold(false)(report.issuedOn isAfter _))  // Keep only NGS-Reports after the MVH-Board-Date
+       .foldLeft(Set.empty[Submission.SequenceType.Value])(
+         (seqTypes,report) =>
+           seqTypes.pipe(
+             set =>
+               if (report.results.simpleVariants.exists(_.nonEmpty) || report.results.copyNumberVariants.exists(_.nonEmpty) || report.results.dnaFusions.exists(_.nonEmpty))
+                 set + Submission.SequenceType.DNA
+               else set
+           )
+           .pipe(
+             set => 
+               if (report.results.rnaFusions.exists(_.nonEmpty) || report.results.rnaSeqs.exists(_.nonEmpty))
+                 set + Submission.SequenceType.RNA
+               else set
+           )
+       )
+    )
+
+  } 
 
   override def report(
     criteria: Report.Criteria

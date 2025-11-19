@@ -1,7 +1,7 @@
 package de.dnpm.dip.mtb.validation.impl
 
 
-import java.time.LocalDate
+import java.time.YearMonth
 import de.dnpm.dip.coding.{
   Code,
   Coding
@@ -24,7 +24,7 @@ trait Invalidators
 
   def invalidate(patient: Patient): Patient =
     patient.copy(
-      birthDate = LocalDate.now minusYears 140
+      birthDate = YearMonth.now minusYears 140
     )
 
 
@@ -102,7 +102,7 @@ trait Invalidators
           record.getResponses.map(
             r => r.copy(
               value = Coding(RECIST.PD),
-              effectiveDate = record.patient.birthDate
+              effectiveDate = record.patient.birthDate.atDay(1)
             )
           )
         )
