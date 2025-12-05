@@ -58,7 +58,38 @@ class Tests extends AsyncFlatSpec with Invalidators
 
   "TNM code validations" must "have behaved correctly" in { 
 
-    val tCodes = List("T1(m)","T1(3)")
+    val tCodes =
+      List(
+       "TX",
+       "T0",
+       "Tis",
+       "T1",
+       "T1a",
+       "T1(m)",
+       "T1(3)",
+       "T1a2",
+       "T1a(2)",
+       "T1a1",
+       "T1a2",
+       "T1b",
+       "T1b1",
+       "T1b2",
+       "T1b3",
+       "T1c",
+       "T1c1",
+       "T1c2",
+       "T1c3",
+       "T1d",
+       "T1mi",
+       "T2",
+       "T2a",
+       "T2a1",
+       "T2a2",
+       "T2b",
+       "T3",
+       "T4"
+      )
+
     val nCodes = List("N1b","pN1(mi)","pN0(i-)")
     val mCodes = List("pM1","cM0")
 
