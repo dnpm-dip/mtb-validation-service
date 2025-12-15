@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.4...v1.1.5) (2025-12-15)
+
+
+### Bug Fixes
+
+* bump service-base to 1.2.2 ([ba5fc3a](https://github.com/dnpm-dip/mtb-validation-service/commit/ba5fc3a07594ebdead85e58106d4b1ba02b911c2))
+
 ## [1.1.4](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.3...v1.1.4) (2025-12-15)
 
 
