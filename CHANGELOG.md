@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.4](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.3...v1.1.4) (2025-12-15)
+
+
+### Bug Fixes
+
+* TNM validation ([#10](https://github.com/dnpm-dip/mtb-validation-service/issues/10)) ([44e472f](https://github.com/dnpm-dip/mtb-validation-service/commit/44e472f1e0aa5c85b92fa848449282e17e4c4c38))
+* tnm validation ([#12](https://github.com/dnpm-dip/mtb-validation-service/issues/12)) ([5ebe576](https://github.com/dnpm-dip/mtb-validation-service/commit/5ebe576896378e617b5dab503c66d7c681feb77c))
+
 ## [1.1.3](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.2...v1.1.3) (2025-11-19)
 
 
