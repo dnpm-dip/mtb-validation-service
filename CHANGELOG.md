@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.7](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.6...v1.1.7) (2026-01-12)
+
+
+### Bug Fixes
+
+* Fixed problem that NGS report validation is conditional on 'CarePlan.noSequencingPerformedReason' being defined, to ensure (potential prior) diagnostic reports be always validated ([070fdc0](https://github.com/dnpm-dip/mtb-validation-service/commit/070fdc0cc8198a4ac8a3588c9c0e8aad25392713))
+
 ## [1.1.6](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.5...v1.1.6) (2025-12-15)
 
 
