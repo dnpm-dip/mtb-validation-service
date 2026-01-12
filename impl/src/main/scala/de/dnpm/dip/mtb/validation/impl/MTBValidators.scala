@@ -670,10 +670,7 @@ trait MTBValidators extends Validators
           ifDefined(record.msiFindings)(validateEach(_)),
           record.getHistologyReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Histologie-Berichte") andThen ( validateEach(_)),
       //TODO: IHC-Reports
-          if (!record.getCarePlans.exists(_.noSequencingPerformedReason.isDefined))
-            record.getNgsReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "NGS-Berichte") andThen ( validateEach(_))
-          else
-            Nil.validNel,
+          record.getNgsReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "NGS-Berichte") andThen (validateEach(_)),
           record.getCarePlans must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Beschlüsse") andThen ( validateEach(_)) andThen (
             // Skip the first, potentially MVH-initiating board decision protocol from fine-grained check that either recommendations or 'no target' be defined
             _.sortBy(_.issuedOn).tail validateEach (
