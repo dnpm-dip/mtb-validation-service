@@ -25,6 +25,8 @@ import de.dnpm.dip.model.{
   Id,
   NGSReport,
   Patient,
+  Reference,
+  Recommendation,
   Therapy
 }
 import Therapy.Status.{
@@ -38,6 +40,7 @@ import de.dnpm.dip.service.validation.{
   Validators
 }
 import de.dnpm.dip.mtb.model._
+import MTBRecommendation.SupportingFinding
 import MTBTherapy.StatusReason.Progression
 import TumorCellContent.Method.{
   Bioinformatic,
@@ -45,6 +48,7 @@ import TumorCellContent.Method.{
 }
 import Issue.{
   Error,
+  Fatal,
   Path,
   Severity,
   Warning
@@ -160,7 +164,6 @@ trait MTBValidators extends Validators
   ): LocalDate =
     patient
       .dateOfDeath
-      .map(_.atEndOfMonth)
       .getOrElse(
         // 1. Censoring time strategy: fall back to date of last therapy follow-up
         therapies
@@ -200,7 +203,7 @@ trait MTBValidators extends Validators
           }
       )
       // 3. Use patient date of death as "progression" date
-      .orElse(patient.dateOfDeath.map(_.atEndOfMonth))
+      .orElse(patient.dateOfDeath)
       // 4. Censoring: therapy recording date
       .getOrElse(therapy.recordedOn)
 
@@ -549,13 +552,33 @@ trait MTBValidators extends Validators
   }
 
 
+  private def MTBRecommendationValidator[T <: Recommendation with MTBRecommendation: Path.Node](
+    implicit
+    patient: Patient,
+    variants: Iterable[Variant],
+    findings: Reference.Resolver[SupportingFinding]
+  ): Validator[Issue,T] =
+    RecommendationValidator[T] combineWith {
+      rec =>
+        ifDefined(rec.supportingFindings)(
+          _.validateEach(
+            ref => ref.resolve must be (defined) otherwise (
+              Fatal(s"Nicht auflösbare Referenz-ID '${ref.id}' auf stützendes Befund-Objekt") at "Stützender (Molekular-)Befund"
+            ) map (_ => ref)
+          )
+        )
+        .map(_ => rec) on rec
+    }
+
+
   implicit def medicationRecommendationValidator(
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     variants: Iterable[Variant],
+    findings: Reference.Resolver[SupportingFinding]
   ): Validator[Issue,MTBMedicationRecommendation] =
-    RecommendationValidator[MTBMedicationRecommendation] combineWith {
+    MTBRecommendationValidator[MTBMedicationRecommendation] combineWith {
       rec =>
         (
           validateOpt(rec.reason) at "Therapie-Grund (Diagnose)",
@@ -563,7 +586,6 @@ trait MTBValidators extends Validators
           rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
           rec.useType must be (defined) otherwise (MissingValue("Empfehlungsart")),
           rec.category must be (defined) otherwise (MissingValue("Art der Therapie")),
-
         )
         .errorsOr(rec) on rec
     }
@@ -573,7 +595,8 @@ trait MTBValidators extends Validators
     implicit
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
-    variants: Iterable[Variant]
+    variants: Iterable[Variant],
+    findings: Reference.Resolver[SupportingFinding]
   ): Validator[Issue,MTBCarePlan] =
     carePlan =>
       (
@@ -623,6 +646,7 @@ trait MTBValidators extends Validators
       .errorsOr(response) on response
   }
 
+
   val patientRecordValidator: Validator[Issue,MTBPatientRecord] = 
     PatientRecordValidator[MTBPatientRecord] combineWith {
       record =>
@@ -640,7 +664,19 @@ trait MTBValidators extends Validators
         implicit val histologyReports = record.getHistologyReports
   
         implicit val variants = record.getNgsReports.flatMap(_.variants)
-  
+
+        // Reference[SupportingFinding](t).id used here as a workaround to widen the respective Id into Id[SupportingFinding]
+        implicit val supportingFindings = (
+          record.msiFindings.getOrElse(List.empty).map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t)) ++
+          record.getNgsReports.map(_.results).flatMap(
+            results =>
+              results.tmb.map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t)) ++
+              results.brcaness.map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t)) ++
+              results.hrdScore.map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t))
+          )
+        )
+        .toMap
+
         implicit val claims = record.getClaims
   
         implicit val claimResponses = record.getClaimResponses
