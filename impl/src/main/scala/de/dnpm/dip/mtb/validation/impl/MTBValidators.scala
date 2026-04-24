@@ -694,7 +694,7 @@ trait MTBValidators extends Validators
         (
           validateEach(diagnoses),
           diagnoses.filter(_.`type`.latestBy(_.date).value.code.enumValue == MTBDiagnosis.Type.Main) must have (size (1)) otherwise (
-            Error(s"Es muss genau eine Haupt-Diagnose definiert sein") at "Diagnoses"
+            Error(s"Es muss genau eine Haupt-Diagnose definiert sein") at "Diagnosen"
           ),
           record.getGuidelineTherapies must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Leitlinien-Therapien") andThen {
             implicit val v = GuidelineTherapyValidator
