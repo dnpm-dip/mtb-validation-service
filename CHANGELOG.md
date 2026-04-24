@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.8](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.7...v1.1.8) (2026-04-24)
+
+
+### Bug Fixes
+
+* Adapted validation diagnoses to ensure that exactly 1 'main' dia… ([#19](https://github.com/dnpm-dip/mtb-validation-service/issues/19)) ([1345f09](https://github.com/dnpm-dip/mtb-validation-service/commit/1345f09209d5f702717a1ef49b8eeec4ea60cbe8))
+* Added validation for MTBRecommendation.supportingFindings ([#17](https://github.com/dnpm-dip/mtb-validation-service/issues/17)) ([06e2909](https://github.com/dnpm-dip/mtb-validation-service/commit/06e290996b371b6e18548a1704884d83cfd32c60))
+
 ## [1.1.7](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.6...v1.1.7) (2026-01-12)
 
 
