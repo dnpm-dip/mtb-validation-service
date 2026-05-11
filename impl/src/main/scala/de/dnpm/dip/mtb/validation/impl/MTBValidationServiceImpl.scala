@@ -9,6 +9,13 @@ import de.dnpm.dip.service.validation.{
   Issue,
   Repository
 }
+import de.dnpm.dip.model.NGSReport
+import NGSReport.Type.{
+  Exome,
+  GenomeShortRead,
+  GenomeLongRead,
+  Panel
+}
 import de.dnpm.dip.mtb.model.MTBPatientRecord
 import de.dnpm.dip.mtb.validation.api.{
   MTBValidationService,
@@ -41,6 +48,7 @@ class MTBValidationServiceImpl
   private val repo: Repository[Future,Monad[Future],MTBPatientRecord]
 )
 extends BaseValidationService(
+  Set(Exome,GenomeShortRead,GenomeLongRead,Panel),
   validator,
   repo
 )

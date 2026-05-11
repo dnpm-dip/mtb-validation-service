@@ -48,14 +48,17 @@ with MTBMVHService
 
   import de.dnpm.dip.service.mvh.extensions._
 
+  // Not relevant for MTB
+  override def diagnosticExtent(record: MTBPatientRecord) = None
+
   override def sequenceTypes(
     record: MTBPatientRecord
   ): Option[Set[Submission.SequenceType.Value]] = {
 
-    val mvhBoardDate = record.mvhCarePlan.map(_.issuedOn)
+    val indicationBoardDate = record.indicationCarePlan.map(_.issuedOn)
 
     record.ngsReports.map(
-      _.filter(report => mvhBoardDate.fold(false)(report.issuedOn isAfter _))  // Keep only NGS-Reports after the MVH-Board-Date
+      _.filter(report => indicationBoardDate.fold(false)(report.issuedOn isAfter _))  // Keep only NGS-Reports after the MVH-Board-Date
        .foldLeft(Set.empty[Submission.SequenceType.Value])(
          (seqTypes,report) =>
            seqTypes.pipe(

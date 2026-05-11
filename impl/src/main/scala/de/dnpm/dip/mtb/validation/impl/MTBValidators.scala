@@ -113,7 +113,7 @@ trait MTBValidators extends Validators
   implicit val mtbMedicationRecommendationNode: Path.Node[MTBMedicationRecommendation] =
     Path.Node("MTB-Therapie-Empfehlung")
 
-  implicit val carePlanNode: Path.Node[MTBCarePlan] =
+  implicit val mtbCarePlanNode: Path.Node[MTBCarePlan] =
     Path.Node("MTB-Beschluss")
 
   implicit val claimNode: Path.Node[Claim] =
