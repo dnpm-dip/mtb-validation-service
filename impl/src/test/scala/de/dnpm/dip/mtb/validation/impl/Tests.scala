@@ -44,7 +44,7 @@ class Tests extends AsyncFlatSpec with Invalidators
 
   "Validation of invalidated MTBPatientRecord" must "have failed" in {
 
-    (service ! Validate(DataUpload(record,None))).map {
+    (service ! Validate(DataUpload(record,None),false)).map {
 
       case Left(FatalIssuesDetected(report)) =>
         toJson(report) pipe prettyPrint pipe println
