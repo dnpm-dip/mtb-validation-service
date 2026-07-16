@@ -576,14 +576,16 @@ trait MTBValidators extends Validators
     patient: Patient,
     diagnoses: Iterable[MTBDiagnosis],
     variants: Iterable[Variant],
-    findings: Reference.Resolver[SupportingFinding]
+    findings: Reference.Resolver[SupportingFinding],
   ): Validator[Issue,MTBMedicationRecommendation] =
     MTBRecommendationValidator[MTBMedicationRecommendation] combineWith {
       rec =>
         (
           validateOpt(rec.reason) at "Therapie-Grund (Diagnose)",
           rec.levelOfEvidence must be (defined) otherwise (MissingValue("Evidenz-Level")),
-          rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)),
+          rec.medication must be (nonEmpty) otherwise (MissingValue("Medikation",Severity.Error)) andThen (
+            meds => validateEach(meds.toList) at "Medikation"
+          ),
           rec.useType must be (defined) otherwise (MissingValue("Empfehlungsart")),
           rec.category must be (defined) otherwise (MissingValue("Art der Therapie")),
         )
