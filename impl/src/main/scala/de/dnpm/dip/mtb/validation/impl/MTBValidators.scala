@@ -2,7 +2,6 @@ package de.dnpm.dip.mtb.validation.impl
 
 
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit.WEEKS
 import cats.Applicative
 import cats.syntax.validated._
 import de.ekut.tbi.validation.Validator
@@ -242,7 +241,7 @@ trait MTBValidators extends Validators
         diagnosis.grading must be (defined) otherwise (MissingValue("Tumor-Grading")),
         diagnosis.staging must be (defined) otherwise (MissingValue("Tumor-Staging")) andThen (_.get.history.validateEach),
         diagnosis.guidelineTreatmentStatus must be (defined) otherwise (MissingValue("Leitlinien-Behandlungsstatus")),
-        WEEKS.between(diagnosis.recordedOn,dateOfDeathOrCensoring(patient)) must be (positive) otherwise (
+        dateOfDeathOrCensoring(patient) must not (be (before (diagnosis.recordedOn))) otherwise (
           Error("Die aus Erst-Diagnosedatum und Todes- bzw Zensierungsdatum ermittelte Zeit wäre negativ!") at "Overall-Survival"
         ) map (_ => diagnosis.recordedOn),
         diagnosis.`type`.latestBy(_.date).value.code.enumValue match { 
@@ -311,7 +310,7 @@ trait MTBValidators extends Validators
           },
           ifDefined(therapy.period.map(_.start)){
             start =>
-              WEEKS.between(start,dateOfProgressionOrCensoring(therapy,patient)) must be (positive) otherwise (
+              dateOfProgressionOrCensoring(therapy,patient) must not (be (before (start))) otherwise (
                 Error("Die aus Therapie-Start und Progressions- bzw Zensierungsdatum ermittelte PFS-Zeit wäre negativ!") at "PFS-Zeit"
               ) map (_ => start)
           }
