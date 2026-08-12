@@ -720,6 +720,10 @@ trait MTBValidators extends Validators
           ifDefined(record.followUps.filter(_.nonEmpty)){
             followUps =>
               (
+                record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
+                  Warning(s"Es sind ${followUps.size} Follow-ups deklariert, aber nur ${record.getPerformanceStatus.size} ECOG-Werte vorhanden: Bei jedem FU sollte nach Möglichkeit der ECOG-Status erfasst worden sein.")
+                    at "ECOG-Status"
+                ),
                 if (medicationRecommendations.nonEmpty)
                   record.getSystemicTherapies must be (nonEmpty) otherwise (
                     Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${medicationRecommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
@@ -727,7 +731,7 @@ trait MTBValidators extends Validators
                   )
                 else Nil.validNel
               )
-              .map(_ => followUps)
+              .errorsOr(followUps)
           },
           claims must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge") andThen ( validateEach(_) ),
           claimResponses must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Antworten") andThen ( validateEach(_) ),
