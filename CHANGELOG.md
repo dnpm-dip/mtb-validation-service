@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.10](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.9...v1.1.10) (2026-08-12)
+
+
+### Bug Fixes
+
+* Added missing validation of medication in MTBMedicationRecommendation ([#22](https://github.com/dnpm-dip/mtb-validation-service/issues/22)) ([2551065](https://github.com/dnpm-dip/mtb-validation-service/commit/2551065fc685cd07c744efdec375297c2fed34a8))
+* Bump dependencies: service-base to 1.5.0 and codesystems for tests ([#26](https://github.com/dnpm-dip/mtb-validation-service/issues/26)) ([0ad6784](https://github.com/dnpm-dip/mtb-validation-service/commit/0ad67844150524a167ab5ca90d3ecfdc01a1d3fb))
+* Corrected validation of OS and PFS durations ([#24](https://github.com/dnpm-dip/mtb-validation-service/issues/24)) ([f223be9](https://github.com/dnpm-dip/mtb-validation-service/commit/f223be90085eb0d9274cc7df6d281e4863469280))
+* Re-added check for presence of ECOG in follow-ups, but on 'warning' level ([#25](https://github.com/dnpm-dip/mtb-validation-service/issues/25)) ([e10d54f](https://github.com/dnpm-dip/mtb-validation-service/commit/e10d54f24544c34779f163e536096a9e3a8a9a3c))
+* Removed check for presence of ECOG in Follow-Up, because this makes it implicitly mandatory ([#21](https://github.com/dnpm-dip/mtb-validation-service/issues/21)) ([2f5524e](https://github.com/dnpm-dip/mtb-validation-service/commit/2f5524ee20a8fbe9475eb3df5ddc01beadbbf4a0))
+
 ## [1.1.9](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.8...v1.1.9) (2026-06-01)
 
 
