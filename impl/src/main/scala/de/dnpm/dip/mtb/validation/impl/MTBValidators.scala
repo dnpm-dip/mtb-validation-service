@@ -20,6 +20,7 @@ import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
 import de.dnpm.dip.model.{
   ClosedInterval,
+  FollowUp,
   History,
   Id,
   NGSReport,
@@ -716,7 +717,7 @@ trait MTBValidators extends Validators
               ) map (_ => cp) on cp
             )
           ),
-          ifDefined(record.followUps.filter(_.nonEmpty)){
+          ifDefined(record.followUps.map(_.filter(_.patientStatus.exists(_.code.enumValue != FollowUp.PatientStatus.LostToFU))).filter(_.nonEmpty)){
             followUps =>
               (
                 record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
