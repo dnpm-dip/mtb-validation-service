@@ -719,12 +719,14 @@ trait MTBValidators extends Validators
           record.getCarePlans must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Beschlüsse") andThen ( validateEach(_)) andThen {
             carePlans =>
 
-              // Exclude indication board CarePlans from fine-grained check that either recommendations or 'no target' be defined:
-              // If CarePlan.boardType is used/defined, project therapy board plans accordingly,
-              // Else assume the first CarePlan as indication board plan and rtain only the latter ones
+              // Exclude indication board CarePlans from the recommendations check.
+              // If no plan identifies the indication board, assume the first untyped plan does.
+              val untypedCarePlans = carePlans.filter(_.boardType.isEmpty).sortBy(_.issuedOn)
               val therapyCarePlans =
-                if (carePlans.forall(_.boardType.isDefined)) carePlans.filter(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.TherapyBoard))
-                else carePlans.sortBy(_.issuedOn).tail 
+                carePlans.filter(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.TherapyBoard)) ++
+                (if (carePlans.exists(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.IndicationBoard)))
+                   untypedCarePlans
+                 else untypedCarePlans.drop(1))
             
               therapyCarePlans validateEach (
                 cp => (cp.medicationRecommendations.filter(_.nonEmpty) orElse cp.recommendationsMissingReason) must be (defined) otherwise (
