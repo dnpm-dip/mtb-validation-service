@@ -720,13 +720,14 @@ trait MTBValidators extends Validators
             carePlans =>
 
               // Exclude indication board CarePlans from the recommendations check.
-              // If no plan identifies the indication board, assume the first untyped plan does.
-              val untypedCarePlans = carePlans.filter(_.boardType.isEmpty).sortBy(_.issuedOn)
               val therapyCarePlans =
-                carePlans.filter(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.TherapyBoard)) ++
-                (if (carePlans.exists(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.IndicationBoard)))
-                   untypedCarePlans
-                 else untypedCarePlans.drop(1))
+                // If attribute CarePlan.boardType is used, assume that at least indication board plans are explicitly marked as such.
+                // Thus retain only therapy board plans
+                if (carePlans.exists(_.boardType.isDefined))
+                  carePlans.filter(_.boardType.getOrElse(CarePlan.BoardType.TherapyBoard) != CarePlan.BoardType.IndicationBoard)
+                // If no plan identifies the indication board, assume the first untyped plan does.
+                else carePlans.drop(1)
+
             
               therapyCarePlans validateEach (
                 cp => (cp.medicationRecommendations.filter(_.nonEmpty) orElse cp.recommendationsMissingReason) must be (defined) otherwise (
