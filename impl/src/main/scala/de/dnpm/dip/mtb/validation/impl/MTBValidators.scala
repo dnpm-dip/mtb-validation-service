@@ -723,7 +723,7 @@ trait MTBValidators extends Validators
               // If CarePlan.boardType is used/defined, project therapy board plans accordingly,
               // Else assume the first CarePlan as indication board plan and rtain only the latter ones
               val therapyCarePlans =
-                if (carePlans.exists(_.boardType.isDefined)) carePlans.filter(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.TherapyBoard))
+                if (carePlans.forall(_.boardType.isDefined)) carePlans.filter(_.boardType.exists(_.code.enumValue == CarePlan.BoardType.TherapyBoard))
                 else carePlans.sortBy(_.issuedOn).tail 
             
               therapyCarePlans validateEach (
