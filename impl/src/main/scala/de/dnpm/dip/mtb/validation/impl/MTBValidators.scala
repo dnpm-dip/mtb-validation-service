@@ -259,7 +259,7 @@ trait MTBValidators extends Validators
       .errorsOr(diagnosis) on diagnosis
 
 
-  implicit class TherapyExtensions[T <: Therapy](val therapy: T)// extends AnyVal
+  implicit class TherapyExtensions[T <: Therapy](val therapy: T)
   {
     def wasStarted = therapy.status.code.enumValue match { 
       case Ongoing | Completed | Stopped => true
@@ -747,7 +747,7 @@ trait MTBValidators extends Validators
                   )
                 else Nil.validNel,
                 // Check for presence of Response in case started therapies occur
-                ifDefined (record.systemicTherapies.map(_.collect { case history if history.latest.wasStarted => history.latest }))(
+                ifDefined (record.systemicTherapies.map(_.collect { case history if history.latest.wasStarted => history.latest }).filter(_.nonEmpty))(
                   startedTherapies => record.getResponses must be (nonEmpty) otherwise (
                     Warning(s"Es sind keine Responses erfasst, obwohl ${startedTherapies.size} begonnene/durchgeführte Therapien vorkommen") at "Responses"
                   ) map (_ => startedTherapies)
