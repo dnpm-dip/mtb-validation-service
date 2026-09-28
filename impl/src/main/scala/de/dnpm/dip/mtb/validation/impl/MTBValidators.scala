@@ -721,12 +721,13 @@ trait MTBValidators extends Validators
 
               // Exclude indication board CarePlans from the recommendations check.
               val therapyCarePlans =
-                // If attribute CarePlan.boardType is used, assume that at least indication board plans are explicitly marked as such.
-                // Thus retain only therapy board plans
+                // If attribute CarePlan.boardType is used at all,
+                // assume that at least indication board plans are explicitly marked as such.
                 if (carePlans.exists(_.boardType.isDefined))
-                  carePlans.filter(_.boardType.getOrElse(CarePlan.BoardType.TherapyBoard) != CarePlan.BoardType.IndicationBoard)
-                // If no plan identifies the indication board, assume the first untyped plan does.
-                else carePlans.drop(1)
+                  carePlans.filterNot(_.boardType.exists(_ != CarePlan.BoardType.IndicationBoard))
+//                  carePlans.filter(_.boardType.getOrElse(CarePlan.BoardType.TherapyBoard) != CarePlan.BoardType.IndicationBoard)
+                // If no plan identifies the indication board, assume the first is.
+                else carePlans.sortBy(_.issuedOn).drop(1)
 
             
               therapyCarePlans validateEach (
