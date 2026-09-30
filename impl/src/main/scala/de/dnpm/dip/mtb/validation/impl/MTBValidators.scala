@@ -19,7 +19,9 @@ import de.dnpm.dip.coding.icd.ICD10GM
 import de.dnpm.dip.coding.icd.ICDO3
 import de.dnpm.dip.coding.hgnc.HGNC
 import de.dnpm.dip.model.{
+  CarePlan,
   ClosedInterval,
+  FollowUp,
   History,
   Id,
   NGSReport,
@@ -257,6 +259,15 @@ trait MTBValidators extends Validators
       .errorsOr(diagnosis) on diagnosis
 
 
+  implicit class TherapyExtensions[T <: Therapy](val therapy: T)
+  {
+    def wasStarted = therapy.status.code.enumValue match { 
+      case Ongoing | Completed | Stopped => true
+      case _                             => false
+    }
+
+  }
+
   def GuidelineTherapyValidator(
     implicit
     patient: Patient,
@@ -286,15 +297,12 @@ trait MTBValidators extends Validators
       therapy =>
         val status = therapy.status.code.enumValue
         (
-          status match {
-            case Ongoing | Completed | Stopped  =>
-              therapy.medication.getOrElse(Set.empty).toList must be (nonEmpty) otherwise (
-                Error("Fehlende Angabe bei begonnener Therapie")
-              ) andThen (
-                validateEach(_)
-              ) at "Medikation"
-            case _ => None.validNel
-          },
+          if (therapy.wasStarted)
+            therapy.medication.getOrElse(Set.empty).toList must be (nonEmpty) otherwise (
+              Error("Fehlende Angabe bei begonnener Therapie")
+            ) andThen ( validateEach(_) ) at "Medikation"
+          else None.validNel,
+
           status match {
             case Ongoing =>
               therapy.period must be (defined) otherwise (Error("Fehlende Angabe bei begonnener Therapie") at "Zeitraum")
@@ -708,15 +716,25 @@ trait MTBValidators extends Validators
           record.getHistologyReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Histologie-Berichte") andThen ( validateEach(_)),
       //TODO: IHC-Reports
           record.getNgsReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "NGS-Berichte") andThen (validateEach(_)),
-          record.getCarePlans must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Beschlüsse") andThen ( validateEach(_)) andThen (
-            // Skip the first, potentially MVH-initiating board decision protocol from fine-grained check that either recommendations or 'no target' be defined
-            _.sortBy(_.issuedOn).tail validateEach (
-              cp => (cp.medicationRecommendations.filter(_.nonEmpty) orElse cp.recommendationsMissingReason) must be (defined) otherwise (
-                Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein") at "Status"
-              ) map (_ => cp) on cp
-            )
-          ),
-          ifDefined(record.followUps.filter(_.nonEmpty)){
+          record.getCarePlans must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Beschlüsse") andThen ( validateEach(_)) andThen {
+            carePlans =>
+
+              // Exclude indication board CarePlans from the recommendations check.
+              val therapyCarePlans =
+                // If attribute CarePlan.boardType is used at all, assume that at least indication board plans are explicitly marked as such.
+                if (carePlans.exists(_.boardType.isDefined))
+                  carePlans.filterNot(_.boardType.exists(_ == CarePlan.BoardType.IndicationBoard))
+                // Else assume the first by date is
+                else carePlans.sortBy(_.issuedOn).drop(1)
+            
+              therapyCarePlans validateEach (
+                cp => (cp.medicationRecommendations.filter(_.nonEmpty) orElse cp.recommendationsMissingReason) must be (defined) otherwise (
+                  Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein") at "Status"
+                ) map (_ => cp) on cp
+              )
+          },
+          // Only perform FollowUp-releated checks if not all FU are declared as "lost to follow-up"
+          ifDefined(record.followUps.map(_.filterNot(_.patientStatus.exists(_.code.enumValue == FollowUp.PatientStatus.LostToFU))).filter(_.nonEmpty)){
             followUps =>
               (
                 record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
@@ -728,7 +746,14 @@ trait MTBValidators extends Validators
                     Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${medicationRecommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
                       at "MTB-Therapien"
                   )
-                else Nil.validNel
+                else Nil.validNel,
+                // Check for presence of Response in case started therapies occur
+                ifDefined (record.systemicTherapies.map(_.collect { case history if history.latest.wasStarted => history.latest }).filter(_.nonEmpty))(
+                  startedTherapies => record.getResponses must be (nonEmpty) otherwise (
+                    Warning(s"Es sind keine Responses erfasst, obwohl ${startedTherapies.size} begonnene/durchgeführte Therapien vorkommen") at "Responses"
+                  ) map (_ => startedTherapies)
+                )
+
               )
               .errorsOr(followUps)
           },
