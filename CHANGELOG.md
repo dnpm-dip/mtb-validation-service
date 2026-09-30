@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.12](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.11...v1.1.12) (2026-09-30)
+
+
+### Bug Fixes
+
+* Corrected filtering logic to extract only therapy-board careplans for recommendations check ([5cc9173](https://github.com/dnpm-dip/mtb-validation-service/commit/5cc91739038334173196b67ff654b4e0c09fa648))
+* follow up validation ([#28](https://github.com/dnpm-dip/mtb-validation-service/issues/28)) ([5cc9173](https://github.com/dnpm-dip/mtb-validation-service/commit/5cc91739038334173196b67ff654b4e0c09fa648))
+
 ## [1.1.11](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.10...v1.1.11) (2026-09-14)
 
 
