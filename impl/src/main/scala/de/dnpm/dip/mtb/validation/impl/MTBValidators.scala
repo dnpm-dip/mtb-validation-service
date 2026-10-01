@@ -30,6 +30,7 @@ import de.dnpm.dip.model.{
   Recommendation,
   Therapy
 }
+import CarePlan.BoardType.IndicationBoard
 import Therapy.Status.{
   NotDone,
   Ongoing,
@@ -722,8 +723,7 @@ trait MTBValidators extends Validators
               // Exclude indication board CarePlans from the recommendations check.
               val therapyCarePlans =
                 // If attribute CarePlan.boardType is used at all, assume that at least indication board plans are explicitly marked as such.
-                if (carePlans.exists(_.boardType.isDefined))
-                  carePlans.filterNot(_.boardType.exists(_ == CarePlan.BoardType.IndicationBoard))
+                if (carePlans.exists(_.boardType.isDefined)) carePlans.filterNot(_.boardType.exists(_.code.enumValue == IndicationBoard))
                 // Else assume the first by date is
                 else carePlans.sortBy(_.issuedOn).drop(1)
             
