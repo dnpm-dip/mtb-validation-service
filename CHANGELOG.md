@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.13](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.12...v1.1.13) (2026-10-01)
+
+
+### Bug Fixes
+
+* Fixed erroneous equality check in indication careplan filter ([#30](https://github.com/dnpm-dip/mtb-validation-service/issues/30)) ([8cdb5a7](https://github.com/dnpm-dip/mtb-validation-service/commit/8cdb5a7502aecda2ea0ab559ec0a0f9d38740792))
+
 ## [1.1.12](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.11...v1.1.12) (2026-09-30)
 
 
