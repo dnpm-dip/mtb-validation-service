@@ -711,7 +711,17 @@ trait MTBValidators extends Validators
             validateEach(_)
           },
           record.getGuidelineProcedures must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Leitlinien-Prozeduren") andThen ( validateEach(_) ),
-          record.getPerformanceStatus must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Performance-Status") andThen ( validateEach(_) ),
+          record.getPerformanceStatus must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Performance-Status") andThen (
+            ecogs => (
+              validateEach(ecogs), 
+              ifDefined (ecogs.find(_.value.code.enumValue == ECOG.Five))(
+                ecog => patient.dateOfDeath must be (defined) otherwise (
+                  Error(s"Es ist ein ECOG Status ${ECOG.Five} (Tod) erfasst, aber kein Todesdatum am Patient-Objekt definiert") at "ECOG-Status"
+                ) map (_ => ecog)
+              )
+            )
+            errorsOr(ecogs)
+          ),
           specimens must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Tumor-Proben") andThen ( validateEach(_) ),
           ifDefined(record.msiFindings)(validateEach(_)),
           record.getHistologyReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Histologie-Berichte") andThen ( validateEach(_)),
