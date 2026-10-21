@@ -118,6 +118,9 @@ trait MTBValidators extends Validators
   implicit val mtbCarePlanNode: Path.Node[MTBCarePlan] =
     Path.Node("MTB-Beschluss")
 
+  implicit val studyInclusionNode: Path.Node[StudyInclusion] =
+    Path.Node("Studien-Einschluss")
+
   implicit val claimNode: Path.Node[Claim] =
     Path.Node("Kostenübernahme-Antrag")
 
@@ -601,6 +604,40 @@ trait MTBValidators extends Validators
     }
 
 
+  implicit def MTBStudyRecommendationValidator(
+    implicit
+    patient: Patient,
+    diagnoses: Iterable[MTBDiagnosis],
+    variants: Iterable[Variant],
+    findings: Reference.Resolver[SupportingFinding],
+  ): Validator[Issue,MTBStudyEnrollmentRecommendation] =
+    StudyRecommendationValidator[MTBStudyEnrollmentRecommendation]
+      .combineWith(MTBRecommendationValidator[MTBStudyEnrollmentRecommendation])
+      .combineWith { 
+        recommendation => (
+          validateOpt(recommendation.reason) at "Grund (Diagnose)",
+          ifDefined(recommendation.medication.map(_.toList))(validateEach(_)) at "Medikation"
+        )
+        .errorsOr(recommendation) on recommendation
+      }
+
+
+  implicit def StudyInclusionValidator(
+    implicit
+    patient: Patient,
+    diagnoses: Iterable[MTBDiagnosis],
+    recommendations: Iterable[MTBStudyEnrollmentRecommendation],
+  ): Validator[Issue,StudyInclusion] =
+    studyInclusion => (
+      validate(studyInclusion.patient) at "Patient",
+      validateOpt(studyInclusion.reason) at "Grund (Diagnose)",
+      validateOpt(studyInclusion.basedOn) at "Empfehlung",
+      validateEach(studyInclusion.study) at "Studien-Referenz",
+      ifDefined(studyInclusion.medication.map(_.toList))(validateEach(_)) at "Medikation"
+    )
+    .errorsOr(studyInclusion) on studyInclusion
+
+
   implicit def carePlanValidator(
     implicit
     patient: Patient,
@@ -661,19 +698,14 @@ trait MTBValidators extends Validators
     PatientRecordValidator[MTBPatientRecord] combineWith {
       record =>
   
-        implicit val patient = record.patient
-  
-        implicit val diagnoses = record.diagnoses.toList
-  
+        implicit val patient                   = record.patient
+        implicit val diagnoses                 = record.diagnoses.toList
         implicit val medicationRecommendations = record.getCarePlans.flatMap(_.medicationRecommendations.getOrElse(List.empty))
-  
-        implicit val procedureRecommendations = record.getCarePlans.flatMap(_.procedureRecommendations.getOrElse(List.empty))
-  
-        implicit val specimens = record.getSpecimens
-  
-        implicit val histologyReports = record.getHistologyReports
-  
-        implicit val variants = record.getNgsReports.flatMap(_.variants)
+        implicit val studyRecommendations      = record.getCarePlans.flatMap(_.studyEnrollmentRecommendations.getOrElse(List.empty))
+        implicit val procedureRecommendations  = record.getCarePlans.flatMap(_.procedureRecommendations.getOrElse(List.empty))
+        implicit val specimens                 = record.getSpecimens
+        implicit val histologyReports          = record.getHistologyReports
+        implicit val variants                  = record.getNgsReports.flatMap(_.variants)
 
         // Reference[SupportingFinding](t).id used here as a workaround to widen the respective Id into Id[SupportingFinding]
         implicit val supportingFindings = (
@@ -687,17 +719,11 @@ trait MTBValidators extends Validators
         )
         .toMap
 
-        implicit val claims = record.getClaims
-  
-        implicit val claimResponses = record.getClaimResponses
-  
+        implicit val claims           = record.getClaims
+        implicit val claimResponses   = record.getClaimResponses
         implicit val therapyHistories = record.getSystemicTherapies
-  
         implicit val lastResponsesByTherapy =
-          record
-           .getResponses
-           .groupBy(_.therapy)
-           .collect {
+          record.getResponses.groupBy(_.therapy).collect {
              case (ref,responses) => ref.id -> responses.maxBy(_.effectiveDate)
            }
   
@@ -738,42 +764,50 @@ trait MTBValidators extends Validators
                 else carePlans.sortBy(_.issuedOn).drop(1)
             
               therapyCarePlans validateEach (
-                cp => (cp.medicationRecommendations.filter(_.nonEmpty) orElse cp.recommendationsMissingReason) must be (defined) otherwise (
-                  Error(s"Fehlende Angabe: Es müssen entweder Therapie-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein") at "Status"
+                cp => (
+                  cp.medicationRecommendations.filter(_.nonEmpty) orElse
+                  cp.studyEnrollmentRecommendations.filter(_.nonEmpty) orElse
+                  cp.recommendationsMissingReason
+                ) must be (defined) otherwise (
+                  Error(s"Fehlende Angabe: Es müssen entweder Therapie-/Studien-Einschluss-Empfehlungen oder explizit Grund '${DisplayLabel.of(MTBCarePlan.RecommendationsMissingReason.NoTarget)}' aufgeführt sein") at "Status"
                 ) map (_ => cp) on cp
               )
           },
-          // Only perform FollowUp-releated checks if not all FU are declared as "lost to follow-up"
-          ifDefined(record.followUps.map(_.filterNot(_.patientStatus.exists(_.code.enumValue == FollowUp.PatientStatus.LostToFU))).filter(_.nonEmpty)){
-            followUps =>
-              (
-                record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
-                  Warning(s"Es sind ${followUps.size} Follow-ups deklariert, aber nur ${record.getPerformanceStatus.size} ECOG-Werte vorhanden: Bei jedem FU sollte nach Möglichkeit der ECOG-Status erfasst worden sein.")
-                    at "ECOG-Status"
-                ),
-                if (medicationRecommendations.nonEmpty)
-                  record.getSystemicTherapies must be (nonEmpty) otherwise (
-                    Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${medicationRecommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
-                      at "MTB-Therapien"
+          // Follow-up sub-checks
+          (
+            // Only perform FollowUp-dependent checks if not all FU are declared as "lost to follow-up"
+            ifDefined(record.followUps.map(_.filterNot(_.patientStatus.exists(_.code.enumValue == FollowUp.PatientStatus.LostToFU))).filter(_.nonEmpty)){
+              followUps =>
+                (
+                  record.getPerformanceStatus must have (size (greaterThanOrEqual (followUps.size))) otherwise (
+                    Warning(s"Es sind ${followUps.size} Follow-ups deklariert, aber nur ${record.getPerformanceStatus.size} ECOG-Werte vorhanden: Bei jedem FU sollte nach Möglichkeit der ECOG-Status erfasst worden sein.")
+                      at "ECOG-Status"
+                  ),
+                  if (medicationRecommendations.nonEmpty)
+                    record.getSystemicTherapies must be (nonEmpty) otherwise (
+                      Error(s"Es sind ${followUps.size} Follow-ups deklariert, aber obwohl ${medicationRecommendations.size} Therapie-Empfehlungen vorliegen sind keine Therapie-Verläufe dokumentiert")
+                        at "MTB-Therapien"
+                    )
+                  else Nil.validNel,
+                  // Check for presence of Response in case started therapies occur
+                  ifDefined (record.systemicTherapies.map(_.collect { case history if history.latest.wasStarted => history.latest }).filter(_.nonEmpty))(
+                    startedTherapies => record.getResponses must be (nonEmpty) otherwise (
+                      Warning(s"Es sind keine Responses erfasst, obwohl ${startedTherapies.size} begonnene/durchgeführte Therapien vorkommen") at "Responses"
+                    ) map (_ => startedTherapies)
                   )
-                else Nil.validNel,
-                // Check for presence of Response in case started therapies occur
-                ifDefined (record.systemicTherapies.map(_.collect { case history if history.latest.wasStarted => history.latest }).filter(_.nonEmpty))(
-                  startedTherapies => record.getResponses must be (nonEmpty) otherwise (
-                    Warning(s"Es sind keine Responses erfasst, obwohl ${startedTherapies.size} begonnene/durchgeführte Therapien vorkommen") at "Responses"
-                  ) map (_ => startedTherapies)
+            
                 )
-
-              )
-              .errorsOr(followUps)
-          },
-          claims must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge") andThen ( validateEach(_) ),
-          claimResponses must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Antworten") andThen ( validateEach(_) ),
-          record.getSystemicTherapies must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Therapien") map (_.flatMap(_.history.toList)) andThen {
-            implicit val v = MTBTherapyValidator
-            validateEach(_)
-          }
-                  
+                .errorsOr(followUps)
+            },
+            claims must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Anträge") andThen ( validateEach(_) ),
+            claimResponses must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Kostenübernahme-Antworten") andThen ( validateEach(_) ),
+            record.getSystemicTherapies must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Therapien") map (_.flatMap(_.history.toList)) andThen {
+              implicit val v = MTBTherapyValidator
+              validateEach(_)
+            },
+            ifDefined(record.studyInclusions.map(_.flatMap(_.history.toList)))(validateEach(_))
+          )
+          .errorsOr(record)
         )
         .errorsOr(record)
   }
