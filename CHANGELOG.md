@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.14](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.13...v1.1.14) (2026-10-21)
+
+
+### Bug Fixes
+
+* Added consistency check: If an ECOG status 5 occurs (death), Patient.dateOfDeath must be defined ([#32](https://github.com/dnpm-dip/mtb-validation-service/issues/32)) ([b014258](https://github.com/dnpm-dip/mtb-validation-service/commit/b0142586be181b91810d88faba2487e244ea3295))
+* Added validation of StudyInclusions introducted in mtb-model 1.2.4 ([#34](https://github.com/dnpm-dip/mtb-validation-service/issues/34)) ([c22d638](https://github.com/dnpm-dip/mtb-validation-service/commit/c22d6385076085f7dd30ec3a79e8e9f749e98c1c))
+
 ## [1.1.13](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.12...v1.1.13) (2026-10-01)
 
 
