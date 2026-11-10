@@ -112,6 +112,12 @@ trait MTBValidators extends Validators
   implicit val rnaFusionNode: Path.Node[RNAFusion] =
     Path.Node("RNA-Fusion")
 
+  implicit val ihcReportNode: Path.Node[IHCReport] =
+    Path.Node("IHC-Bericht")
+
+  implicit val proteinExpressionNode: Path.Node[ProteinExpression] =
+    Path.Node("Protein-Expression")
+
   implicit val mtbMedicationRecommendationNode: Path.Node[MTBMedicationRecommendation] =
     Path.Node("MTB-Therapie-Empfehlung")
 
@@ -563,6 +569,34 @@ trait MTBValidators extends Validators
   }
 
 
+  implicit def ihcReportValidator(
+    implicit
+    patient: Patient,
+    specimens: Reference.Resolver[TumorSpecimen]
+  ): Validator[Issue,IHCReport] = {
+
+    val tpsScoreRange = ClosedInterval(0,100) 
+    val cpsScoreRange = ClosedInterval(0,100) 
+
+    implicit val proteinExpressionValidator: Validator[Issue,ProteinExpression] =
+      proteinExpression => (
+        validate(proteinExpression.patient) at "Patient",
+        validate(proteinExpression.protein) at "Protein-/HGNC-Code",
+        valueIn(proteinExpression.tpsScore) must be (in (tpsScoreRange)) otherwise (Error(s"Wert nicht im Referenz-Bereich $tpsScoreRange")) at "TPS-Score",
+        valueIn(proteinExpression.cpsScore) must be (in (cpsScoreRange)) otherwise (Error(s"Wert nicht im Referenz-Bereich $cpsScoreRange")) at "CPS-Score"
+      )
+      .errorsOr(proteinExpression) on proteinExpression
+
+    ihcReport => (
+      validate(ihcReport.patient) at "Patient",
+      validate(ihcReport.specimen) at "Tumor-Probe",
+      validateEach(ihcReport.results.proteinExpression.toList ++ ihcReport.results.msiMmr) on "Ergebnisse"
+    )
+    .errorsOr(ihcReport) on ihcReport
+
+  } 
+
+
   private def MTBRecommendationValidator[T <: Recommendation with MTBRecommendation: Path.Node](
     implicit
     patient: Patient,
@@ -715,7 +749,9 @@ trait MTBValidators extends Validators
               results.tmb.map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t)) ++
               results.brcaness.map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t)) ++
               results.hrdScore.map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t))
-          )
+          ) ++
+          record.getIhcReports.flatMap(ihc => ihc.results.proteinExpression.toList ++ ihc.results.msiMmr)
+            .map(t => Reference[SupportingFinding](t).id -> SupportingFinding(t))
         )
         .toMap
 
@@ -751,7 +787,7 @@ trait MTBValidators extends Validators
           specimens must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Tumor-Proben") andThen ( validateEach(_) ),
           ifDefined(record.msiFindings)(validateEach(_)),
           record.getHistologyReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "Histologie-Berichte") andThen ( validateEach(_)),
-      //TODO: IHC-Reports
+          ifDefined(record.ihcReports)(validateEach(_)),
           record.getNgsReports must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "NGS-Berichte") andThen (validateEach(_)),
           record.getCarePlans must be (nonEmpty) otherwise (Warning(s"Fehlende Angabe") at "MTB-Beschlüsse") andThen ( validateEach(_)) andThen {
             carePlans =>
