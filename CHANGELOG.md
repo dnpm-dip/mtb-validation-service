@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.16](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.15...v1.1.16) (2026-11-24)
+
+
+### Bug Fixes
+
+* Added validation of IHCReports and ProteinExpression findings ([#36](https://github.com/dnpm-dip/mtb-validation-service/issues/36)) ([d622b82](https://github.com/dnpm-dip/mtb-validation-service/commit/d622b8294531b13bd3ddc8a68de251164cb66113))
+* Bump service-base to 1.5.6 ([97f1853](https://github.com/dnpm-dip/mtb-validation-service/commit/97f1853840f305fc6edffd3ce27ee3b1e6e53955))
+
 ## [1.1.15](https://github.com/dnpm-dip/mtb-validation-service/compare/v1.1.14...v1.1.15) (2026-11-06)
 
 
