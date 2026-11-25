@@ -133,6 +133,9 @@ trait MTBValidators extends Validators
   implicit val claimResponseNode: Path.Node[ClaimResponse] =
     Path.Node("Kostenübernahme-Antwort")
 
+  implicit val responseNode: Path.Node[Response] =
+    Path.Node("Response")
+
 
   implicit val icd10gm: CodeSystemProvider[ICD10GM,cats.Id,Applicative[cats.Id]]
 
@@ -728,6 +731,17 @@ trait MTBValidators extends Validators
   }
 
 
+  protected val recistCodingValidator: Validator[Issue.Builder,Coding[RECIST.Value]] =
+    recist => recist.code.enumValue must not (be (RECIST.MR)) otherwise (
+      Error(s"Obsoleter Wert ${RECIST.MR}, fortan stattdessen mit ${RECIST.PR} kodieren.")
+    ) map (_ => recist)
+
+  implicit def responseValidator(
+    implicit patient: Patient
+  ): Validator[Issue,Response] =
+    ObservationValidator[Response](recistCodingValidator)
+
+
   val patientRecordValidator: Validator[Issue,MTBPatientRecord] = 
     PatientRecordValidator[MTBPatientRecord] combineWith {
       record =>
@@ -843,7 +857,8 @@ trait MTBValidators extends Validators
             },
             ifDefined(record.studyInclusions.map(_.flatMap(_.history.toList)))(validateEach(_))
           )
-          .errorsOr(record)
+          .errorsOr(record),
+          ifDefined(record.responses)(validateEach(_))
         )
         .errorsOr(record)
   }
