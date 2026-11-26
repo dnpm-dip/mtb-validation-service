@@ -569,32 +569,54 @@ trait MTBValidators extends Validators
   }
 
 
+  private val tpsScoreRange = ClosedInterval(0,100) 
+  private val cpsScoreRange = ClosedInterval(0,100) 
+
+  private def ProteinExpressionValidator(
+    codeSystem: CodeSystem[IHCReport.Protein]
+  )(
+    implicit patient: Patient
+  ): Validator[Issue,ProteinExpression] = {
+    implicit val cs = codeSystem
+    proteinExpression => (
+      validate(proteinExpression.patient) at "Patient",
+      validate(proteinExpression.protein) at "Protein-Code",
+      valueIn(proteinExpression.tpsScore) must be (in (tpsScoreRange)) otherwise (Error(s"Wert nicht im Referenz-Bereich $tpsScoreRange")) at "TPS-Score",
+      valueIn(proteinExpression.cpsScore) must be (in (cpsScoreRange)) otherwise (Error(s"Wert nicht im Referenz-Bereich $cpsScoreRange")) at "CPS-Score"
+    )
+    .errorsOr(proteinExpression) on proteinExpression
+  }
+  
   implicit def ihcReportValidator(
     implicit
     patient: Patient,
     specimens: Reference.Resolver[TumorSpecimen]
-  ): Validator[Issue,IHCReport] = {
-
-    val tpsScoreRange = ClosedInterval(0,100) 
-    val cpsScoreRange = ClosedInterval(0,100) 
-
-    implicit val proteinExpressionValidator: Validator[Issue,ProteinExpression] =
-      proteinExpression => (
-        validate(proteinExpression.patient) at "Patient",
-        validate(proteinExpression.protein) at "Protein-/HGNC-Code",
-        valueIn(proteinExpression.tpsScore) must be (in (tpsScoreRange)) otherwise (Error(s"Wert nicht im Referenz-Bereich $tpsScoreRange")) at "TPS-Score",
-        valueIn(proteinExpression.cpsScore) must be (in (cpsScoreRange)) otherwise (Error(s"Wert nicht im Referenz-Bereich $cpsScoreRange")) at "CPS-Score"
-      )
-      .errorsOr(proteinExpression) on proteinExpression
-
+  ): Validator[Issue,IHCReport] =
     ihcReport => (
       validate(ihcReport.patient) at "Patient",
       validate(ihcReport.specimen) at "Tumor-Probe",
-      validateEach(ihcReport.results.proteinExpression.toList ++ ihcReport.results.msiMmr) on "Ergebnisse"
+      {
+        implicit val baseProteinExpressionValidator: Validator[Issue,ProteinExpression] =
+          ProteinExpressionValidator(
+            IHCReport.Protein.codeSystem.filter(concept => IHCReport.Protein.baseProteins.contains(concept.code.value))
+          )
+    
+        validateEach(ihcReport.results.proteinExpression) on "Ergebnisse"
+      },
+      {
+        implicit lazy val msiMmrProteinExpressionValidator: Validator[Issue,ProteinExpression] =
+          ProteinExpressionValidator(
+            IHCReport.Protein.codeSystem.filter(IHCReport.Protein.msiMmrProteinFilter)
+          )
+    
+        ihcReport.results.msiMmr.map(_.protein.code.value) must contain (allOf (IHCReport.Protein.msiMmrProteins)) otherwise (
+          Error(s"Es müssen alle MSI/MMR-Proteine {${IHCReport.Protein.msiMmrProteins.mkString(",")}} untersucht worden sein") at "MSI-MMR-Ergebnisse"
+        ) andThen (
+          _ => validateEach(ihcReport.results.msiMmr) on "MSI-MMR-Ergebnisse"
+        )
+      }
     )
     .errorsOr(ihcReport) on ihcReport
-
-  } 
 
 
   private def MTBRecommendationValidator[T <: Recommendation with MTBRecommendation: Path.Node](
