@@ -577,7 +577,10 @@ trait MTBValidators extends Validators
   )(
     implicit patient: Patient
   ): Validator[Issue,ProteinExpression] = {
+
+    // Implicit for resolvability in Coding-Validator
     implicit val cs = codeSystem
+
     proteinExpression => (
       validate(proteinExpression.patient) at "Patient",
       validate(proteinExpression.protein) at "Protein-Code",
@@ -587,6 +590,20 @@ trait MTBValidators extends Validators
     .errorsOr(proteinExpression) on proteinExpression
   }
   
+  private def GeneralProteinExpressionValidator(
+    implicit patient: Patient
+  ): Validator[Issue,ProteinExpression] =
+    ProteinExpressionValidator(
+      IHCReport.Protein.codeSystem.filter(concept => IHCReport.Protein.baseProteins.contains(concept.code.value))
+    )
+
+  private def MSIMMRProteinExpressionValidator(
+    implicit patient: Patient
+  ): Validator[Issue,ProteinExpression] =
+    ProteinExpressionValidator(
+      IHCReport.Protein.codeSystem.filter(IHCReport.Protein.msiMmrProteinFilter)
+    )
+  
   implicit def ihcReportValidator(
     implicit
     patient: Patient,
@@ -595,19 +612,14 @@ trait MTBValidators extends Validators
     ihcReport => (
       validate(ihcReport.patient) at "Patient",
       validate(ihcReport.specimen) at "Tumor-Probe",
+      // Validate general ProteinExpression and MSI/MMR-Proteinxpressions differently, i.e. against the respective CodeSystem subsets
       {
-        implicit val baseProteinExpressionValidator: Validator[Issue,ProteinExpression] =
-          ProteinExpressionValidator(
-            IHCReport.Protein.codeSystem.filter(concept => IHCReport.Protein.baseProteins.contains(concept.code.value))
-          )
+        implicit val proteinExpressionValidator: Validator[Issue,ProteinExpression] = GeneralProteinExpressionValidator
     
         validateEach(ihcReport.results.proteinExpression) on "Ergebnisse"
       },
       {
-        implicit lazy val msiMmrProteinExpressionValidator: Validator[Issue,ProteinExpression] =
-          ProteinExpressionValidator(
-            IHCReport.Protein.codeSystem.filter(IHCReport.Protein.msiMmrProteinFilter)
-          )
+        implicit lazy val proteinExpressionValidator: Validator[Issue,ProteinExpression] = MSIMMRProteinExpressionValidator
     
         ihcReport.results.msiMmr.map(_.protein.code.value) must contain (allOf (IHCReport.Protein.msiMmrProteins)) otherwise (
           Error(s"Es müssen alle MSI/MMR-Proteine {${IHCReport.Protein.msiMmrProteins.mkString(",")}} untersucht worden sein") at "MSI-MMR-Ergebnisse"
